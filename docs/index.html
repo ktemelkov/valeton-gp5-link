@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17694f">
-  <meta name="description" content="Valeton GP5 Link USB serial terminal.">
+  <meta name="description" content="Valeton GP5 Link BLE MIDI terminal.">
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <title>GP5 Link | Serial Terminal</title>
+  <title>GP5 Link | BLE MIDI Terminal</title>
   <style>
     :root { color-scheme: light; --paper: #f5f7f5; --ink: #202723; --muted: #606b65; --line: #d4dcd6; --green: #17694f; }
     * { box-sizing: border-box; }
@@ -32,35 +32,17 @@
     .status { font-size: 14px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .status::before { content: ""; width: 9px; height: 9px; background: #7e8782; border-radius: 50%; }
     .status.connected::before { background: #17845e; }
-    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 32px; }
-    .terminal-section { min-width: 0; }
-    .connection { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-    label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
-    select, input { padding: 9px 12px; background: white; color: var(--ink); min-width: 0; width: 100%; }
-    .terminal { border: 1px solid #343f38; border-radius: 6px; background: #19211d; overflow: hidden; }
-    .terminal-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #3a463e; color: #cad8ce; font: 12px Consolas, monospace; gap: 12px; }
-    .terminal-bar label { display: flex; align-items: center; color: #cad8ce; font-weight: 400; }
-    input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; accent-color: #79c59b; }
+    .workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .panel { border: 1px solid #343f38; border-radius: 6px; background: #19211d; overflow: hidden; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-bottom: 1px solid #3a463e; color: #cad8ce; font: 12px Consolas, monospace; gap: 12px; }
     pre { margin: 0; padding: 16px; height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #b8e5c9; font: 13px/1.65 Consolas, "Courier New", monospace; }
     form { display: grid; grid-template-columns: minmax(0, 1fr) 105px auto; gap: 10px; align-items: end; margin-top: 16px; }
     .actions { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; }
-    aside { border-left: 1px solid var(--line); padding-left: 24px; }
-    figure { margin: 0; }
-    figure img { width: 100%; height: auto; aspect-ratio: 530 / 677; object-fit: contain; display: block; border-radius: 4px; }
-    figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; }
-    dl { margin-top: 24px; font-size: 13px; }
-    dt { color: var(--muted); margin-top: 16px; }
-    dd { margin: 4px 0 0; overflow-wrap: anywhere; }
-    .notice { border-left: 3px solid #bc7c1e; background: #fff5dc; padding: 12px 16px; font-size: 14px; line-height: 1.5; }
-    #message:empty { display: none; }
     footer { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 16px; }
     @media (max-width: 700px) {
       .header-inner, main, footer { padding: 18px; }
-      .workspace { grid-template-columns: minmax(0, 1fr); }
-      aside { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; display: flex; align-items: start; gap: 24px; }
-      figure { width: 110px; flex-shrink: 0; }
-      dl { margin: 0; }
-      .heading { align-items: start; flex-direction: column; gap: 12px; }
+      .workspace { grid-template-columns: 1fr; }
+      .panel-header { flex-direction: column; align-items: flex-start; }
       form { grid-template-columns: minmax(0, 1fr) 90px; }
       form button { grid-column: 1 / -1; }
       pre { height: 320px; }
@@ -74,176 +56,143 @@
     <button id="install" hidden>Install app</button>
   </div></header>
   <main>
-    <div class="heading"><div><p class="eyebrow">Device workspace</p><h1>Serial terminal</h1></div><span id="status" class="status" role="status">Disconnected</span></div>
+    <div class="heading"><div><p class="eyebrow">Device workspace</p><h1>BLE MIDI Terminal</h1></div><span id="status" class="status">Disconnected</span></div>
     <p id="compatibility" class="notice" hidden></p>
     <p id="message" class="notice" role="status"></p>
     <div class="workspace">
-      <section class="terminal-section" aria-label="Serial connection">
-        <div class="connection">
-          <label>Baud rate<select id="baud"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option><option>921600</option></select></label>
-          <button id="connect" class="primary" disabled>Connect device</button>
-          <button id="disconnect" disabled>Disconnect</button>
+      <section class="panel" aria-label="Connection controls">
+        <div class="panel-header"><span>Connection</span><div><button id="connect" class="primary">Connect</button><button id="disconnect" disabled>Disconnect</button></div></div>
+        <div class="panel-body" style="padding: 16px;">
+          <p id="device-info">No device selected</p>
         </div>
-        <div class="terminal">
-          <div class="terminal-bar"><span>USB / UTF-8</span><label><input id="autoscroll" type="checkbox" checked>Auto-scroll</label></div>
-          <pre id="output" tabindex="0" aria-label="Serial output"></pre>
-        </div>
+      </section>
+      <section class="panel" aria-label="MIDI messages">
+        <div class="panel-header"><span>Received MIDI</span></div>
+        <pre id="received" tabindex="0" aria-label="MIDI output"></pre>
         <form id="send-form">
-          <label>Message<input id="command" type="text" autocomplete="off" spellcheck="false" disabled></label>
-          <label>Line ending<select id="ending"><option value="\n">LF</option><option value="\r\n">CRLF</option><option value="\r">CR</option><option value="">None</option></select></label>
+          <label>Hex input<input id="hexInput" type="text" autocomplete="off" spellcheck="false"></label>
           <button id="send" class="primary" disabled>Send</button>
         </form>
-        <div class="actions"><button id="clear">Clear log</button><button id="save">Save log</button></div>
       </section>
-      <aside>
-        <figure><img src="./hardware.png" alt="Guitar electronics cover with the charging and programming USB port marked" width="530" height="677"><figcaption>GP5 Link / guitar interface</figcaption></figure>
-        <dl><dt>Controller</dt><dd>Seeed XIAO ESP32-C3</dd><dt>USB device</dt><dd id="device">Not connected</dd><dt>Serial format</dt><dd>8 data bits / no parity / 1 stop bit</dd></dl>
-      </aside>
     </div>
   </main>
   <footer><span>Valeton GP5 Link</span><span id="offline-status" role="status">Offline cache pending</span></footer>
   <script>
     const element = (id) => document.getElementById(id);
-    const supported = window.isSecureContext && 'serial' in navigator;
-    let port = null;
-    let reader = null;
-    let readTask = null;
-    let writeTask = null;
-    let closing = false;
-    let connecting = false;
-    let installPrompt = null;
+    const supported = 'bluetooth' in navigator && navigator.bluetooth && navigator.bluetooth.requestDevice;
+    const MIDI_SERVICE_UUID = '03B80E5A-EDE8-4B33-A751-6CE34EC4C700';
+    const MIDI_CHAR_UUID = '7772E5DB-3868-4112-A1A9-F2669D106BF3';
+    let device = null;
+    let server = null;
+    let midiService = null;
+    let midiChar = null;
+    let connected = false;
 
     function updateControls() {
-      const connected = port !== null && !connecting && !closing;
-      element('connect').disabled = !supported || port !== null || connecting || closing;
+      element('connect').disabled = !supported || connected;
       element('disconnect').disabled = !connected;
-      element('baud').disabled = port !== null || connecting || closing;
-      element('command').disabled = !connected;
-      element('send').disabled = !connected || writeTask !== null;
-      element('status').textContent = closing ? 'Disconnecting...' : connecting ? 'Connecting...' : connected ? 'Connected' : 'Disconnected';
+      element('send').disabled = !connected;
+      element('hexInput').disabled = !connected;
+      element('status').textContent = connected ? 'Connected' : 'Disconnected';
       element('status').classList.toggle('connected', connected);
     }
 
     function append(text) {
-      const output = element('output');
+      const output = element('received');
       output.textContent = (output.textContent + text).slice(-100000);
-      if (element('autoscroll').checked) output.scrollTop = output.scrollHeight;
+      output.scrollTop = output.scrollHeight;
     }
 
-    async function readSerial(openedPort) {
-      const decoder = new TextDecoder();
-      try {
-        reader = openedPort.readable.getReader();
-        while (!closing) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          append(decoder.decode(value, { stream: true }));
-        }
-      } catch (error) {
-        if (!closing) element('message').textContent = `Serial read failed: ${error.message}`;
-      } finally {
-        append(decoder.decode());
-        if (reader) reader.releaseLock();
-        reader = null;
+    async function connect() {
+      if (!supported) {
+        element('message').textContent = 'Web Bluetooth not supported in this browser.';
+        return;
       }
-    }
-
-    async function disconnect() {
-      if (!port || closing) return;
-      closing = true;
-      updateControls();
-      const closingPort = port;
       try {
-        if (reader) await reader.cancel();
-      } catch (error) {
-        element('message').textContent = `Serial read cleanup: ${error.message}`;
-      }
-      await readTask;
-      await writeTask;
-      try {
-        await closingPort.close();
-      } catch (error) {
-        element('message').textContent = `Serial close failed: ${error.message}`;
-      } finally {
-        port = null;
-        readTask = null;
-        closing = false;
-        element('device').textContent = 'Not connected';
-        append('\n[Disconnected]\n');
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [MIDI_SERVICE_UUID] }],
+          optionalServices: [MIDI_SERVICE_UUID]
+        });
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+        element('device-info').textContent = `Device: ${device.name || 'Unnamed'} (ID: ${device.id})`;
+        server = await device.gatt.connect();
+        midiService = await server.getPrimaryService(MIDI_SERVICE_UUID);
+        midiChar = await midiService.getCharacteristic(MIDI_CHAR_UUID);
+        await midiChar.startNotifications();
+        midiChar.addEventListener('characteristicvaluechanged', handleMIDI);
+        connected = true;
+        append('[Connected]');
         updateControls();
+      } catch (error) {
+        element('message').textContent = `Connection failed: ${error.message}`;
       }
     }
 
-    element('connect').addEventListener('click', async () => {
-      if (connecting || port) return;
-      connecting = true;
-      element('message').textContent = '';
+    function onDisconnected() {
+      connected = false;
+      append('[Disconnected]');
       updateControls();
-      try {
-        const selected = await navigator.serial.requestPort();
-        await selected.open({ baudRate: Number(element('baud').value), dataBits: 8, stopBits: 1, parity: 'none', flowControl: 'none' });
-        port = selected;
-        const info = port.getInfo();
-        element('device').textContent = info.usbVendorId === undefined ? 'Serial device' : `VID ${info.usbVendorId.toString(16).padStart(4, '0')} / PID ${(info.usbProductId ?? 0).toString(16).padStart(4, '0')}`;
-        append(`[Connected at ${element('baud').value} baud]\n`);
-        readTask = readSerial(selected);
-        readTask.then(() => { if (port === selected && !closing) void disconnect(); });
-      } catch (error) {
-        element('message').textContent = error.name === 'NotFoundError' ? 'No serial port selected.' : `Connection failed: ${error.message}`;
-      } finally {
-        connecting = false;
-        updateControls();
-      }
-    });
+    }
 
+    function disconnect() {
+      if (device && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+    }
+
+    function handleMIDI(event) {
+      const value = event.target.value;
+      const bytes = new Uint8Array(value.buffer);
+      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      append(`\n${hex}`);
+    }
+
+    function parseHexString(str) {
+      const cleaned = str.replace(/\s+/g, '');
+      if (cleaned.length % 2 !== 0) return null;
+      const bytes = [];
+      for (let i = 0; i < cleaned.length; i += 2) {
+        const byte = parseInt(cleaned.substr(i, 2), 16);
+        if (isNaN(byte)) return null;
+        bytes.push(byte);
+      }
+      return new Uint8Array(bytes);
+    }
+
+    element('connect').addEventListener('click', connect);
     element('disconnect').addEventListener('click', disconnect);
-    element('send-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (!port || closing || writeTask) return;
-      const endings = { '\\n': '\n', '\\r\\n': '\r\n', '\\r': '\r', '': '' };
-      const text = element('command').value + endings[element('ending').value];
-      const sendingPort = port;
-      writeTask = (async () => {
-        let writer;
-        try {
-          writer = sendingPort.writable.getWriter();
-          await writer.write(new TextEncoder().encode(text));
-          append(`\n[TX] ${text}`);
-          element('command').value = '';
-        } catch (error) {
-          element('message').textContent = `Serial write failed: ${error.message}`;
-        } finally {
-          if (writer) writer.releaseLock();
-        }
-      })();
-      updateControls();
-      await writeTask;
-      writeTask = null;
-      updateControls();
-    });
-
-    element('clear').addEventListener('click', () => { element('output').textContent = ''; });
-    element('save').addEventListener('click', () => {
-      const url = URL.createObjectURL(new Blob([element('output').textContent], { type: 'text/plain;charset=utf-8' }));
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `gp5-serial-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-      anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    element('send-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!connected || !midiChar) return;
+      const hex = element('hexInput').value.trim();
+      const data = parseHexString(hex);
+      if (!data) {
+        element('message').textContent = 'Invalid hex input.';
+        return;
+      }
+      try {
+        await midiChar.writeValue(data);
+        append(`\n[TX] ${hex}`);
+        element('hexInput').value = '';
+      } catch (err) {
+        element('message').textContent = `Send failed: ${err.message}`;
+      }
     });
 
     if (supported) {
-      navigator.serial.addEventListener('disconnect', (event) => {
-        if (event.target === port) void disconnect();
+      navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
+        // Optional: handle advertising events if needed
       });
     } else {
       element('compatibility').hidden = false;
       element('compatibility').textContent = !window.isSecureContext
-        ? 'USB serial requires HTTPS or localhost.'
-        : 'Web Serial is unavailable. Open this page in desktop Chrome or Edge to connect a USB serial device.';
+        ? 'Web Bluetooth requires HTTPS or localhost.'
+        : 'Web Bluetooth is unavailable. Open this page in a browser that supports Web Bluetooth.';
     }
     updateControls();
 
+    // PWA install prompt handling
+    let installPrompt = null;
     window.addEventListener('beforeinstallprompt', (event) => {
       event.preventDefault();
       installPrompt = event;
@@ -262,6 +211,7 @@
       element('install').hidden = true;
     });
 
+    // Service worker registration for offline support
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {
         element('offline-status').textContent = 'Ready for offline use';
