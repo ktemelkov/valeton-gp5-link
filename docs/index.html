@@ -80,8 +80,9 @@
   <script>
     const element = (id) => document.getElementById(id);
     const supported = 'bluetooth' in navigator && navigator.bluetooth && navigator.bluetooth.requestDevice;
-    const MIDI_SERVICE_UUID = '03B80E5A-EDE8-4B33-A751-6CE34EC4C700';
-    const MIDI_CHAR_UUID = '7772E5DB-3868-4112-A1A9-F2669D106BF3';
+    // Standard BLE MIDI service and characteristic UUIDs (128‑bit form)
+    const MIDI_SERVICE_UUID = '000003B80E5A-0000-1000-8000-00805F9B34FB';
+    const MIDI_CHAR_UUID = '00007772E5DB-0000-1000-8000-00805F9B34FB';
     let device = null;
     let server = null;
     let midiService = null;
