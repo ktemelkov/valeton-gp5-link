@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'gp5-link-serial-';
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
-const APP_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './hardware.png'];
+const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const APP_FILES = ['./', './index.html', './styles.css', './manifest.json', './icon-192.png', './icon-512.png', './hardware.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));

@@ -2,9 +2,7 @@
 
 A project for switching the presets on Valeton GP5 multi-effects processor directly from your guitar.
 Modifications made to the guitar includes:
-- removing tone potentiometer and replacing it with the volume potentiomenter
-- installing a rotary encoder with a push button in the place of the volume potentiometer
-- rewiring the pickup selector switch and disconnecting the neck pickup
+- replacing volume and tone potentiometers with modified push-push potentiometers i.e. removing the pin that holds the potentiometer in pushed state, so it starts acting like a push button
 - installing ESP32 C3 board for sending SysEx messages to the GP5 over BLE 
 
 ## Images
@@ -15,23 +13,13 @@ Modifications made to the guitar includes:
 
 ## How it works
 
-The adapter selection switch is wired to the ESP32-C3 board and is used to select preset switching logic.
-The presets in the Valeton GP5 are organized into blocks of 30 positions. The middle 10 presets of each block are reserved for rythm tones and the lower and upper 10 presets can be used for clean and lead tones. The encoder push button initiates the preset switching itself.
-When the button is pushed, the SysEx message for preset selection is sent to the GP5 with the preset number calculated using the following logic: 
-- Bottom position of the switch: toggles between lower and middle 10 preset blocks 
-- Middle position: switches on/off the delay module
-- Top posisiton of the switch: toggles between upper and middle 10 preset blocks
-For example if your rythm tone is on position 11 and the switch is at the bottom position the push button toggles between preset 11 and preset 1, and if the swich is at the top position the push button toggles between presets 11 and preset 21. So you can have 3 different tones per song and 10 positions for different song settings (30 presets block)
+The volume and tone push-push potentiometers are wired to the ESP32-C3 GPIO 4 and GPIO 5 and are used to switch to the next preset in current preset group, and to switch to the next preset group respectively.
 
 ## Hardware
 
 - Seeed Studio XIAO ESP32C3 board
 - 500 mAh LiPo battery (lasts at least 5 hours of operation)
-- Rotary encoder with push button
-
-## Future
-
-The rotary encoder can be used for preset selection, instead of using the pickup selection switch and disconnecting the bridge pickup.
+- 2x 500k push-push potentiometers
 
 ## Serial Terminal PWA
 

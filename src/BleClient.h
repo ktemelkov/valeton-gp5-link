@@ -17,10 +17,20 @@ public:
 
     bool isConnected() const { return connected; }
 
+    bool isAllowedDevice(const NimBLEAdvertisedDevice *advDevice) const;
+
 private:
-  void onConnect(NimBLEClient *pClient);
-  void onConnectFail(NimBLEClient *pClient, int reason);
-  void onDisconnect(NimBLEClient *pClient, int reason);
+  NimBLEClient *prepareClient();
+
+  void onConnect(NimBLEClient *pClient) override;
+  void onConnectFail(NimBLEClient *pClient, int reason) override;
+  void onDisconnect(NimBLEClient *pClient, int reason) override;
+
+  // Security / pairing callbacks
+  bool onConnParamsUpdateRequest(NimBLEClient *pClient, const ble_gap_upd_params *params) override;
+  void onPassKeyEntry(NimBLEConnInfo &connInfo) override;
+  void onConfirmPasskey(NimBLEConnInfo &connInfo, uint32_t pin) override;
+  void onAuthenticationComplete(NimBLEConnInfo &connInfo) override;
 
 private:
     bool connected = false;

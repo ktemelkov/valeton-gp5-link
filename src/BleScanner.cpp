@@ -10,7 +10,9 @@ BleScanner::BleScanner()
 
     NimBLEDevice::init("");
     NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-    NimBLEDevice::setSecurityAuth(false, false, true);
+    // Allow bonding: many BLE MIDI peripherals refuse to pair (and drop the
+    // link shortly after connecting) unless bonding is enabled.
+    NimBLEDevice::setSecurityAuth(true, false, true);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
 
     NimBLEScan *pScan = NimBLEDevice::getScan();
@@ -32,7 +34,7 @@ BleScanner::~BleScanner()
  */
 bool BleScanner::StartScanning()
 {
-    advDeviceCount = 0;
+    advDeviceCount = -1;
 
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setActiveScan(true);
@@ -60,9 +62,9 @@ bool BleScanner::StopScanning()
  */
 const NimBLEAdvertisedDevice *BleScanner::getDevice(size_t index) const
 {
-    if (index < advDeviceCount)
+    if (advDeviceCount >= 0 && index <= (size_t)advDeviceCount)
     {
-        return advDevices[index];
+        return &advDevices[index];
     }
 
     return nullptr;
@@ -73,7 +75,16 @@ const NimBLEAdvertisedDevice *BleScanner::getDevice(size_t index) const
  */
 void BleScanner::onResult(const NimBLEAdvertisedDevice *advertisedDevice)
 {
-    advDevices[advDeviceCount < 20 ? advDeviceCount++ : 19] = advertisedDevice;
+    DEBUG_MSG("\n%s", "Found BLE device\n");
+    DEBUG_MSG("%s\n\n", advertisedDevice->toString().c_str());
+
+    if (advertisedDevice == nullptr)
+    {
+        return;
+    }
+
+    int slot = advDeviceCount < 19 ? ++advDeviceCount : 19;
+    advDevices[slot] = *advertisedDevice;
 }
 
 /**

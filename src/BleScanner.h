@@ -17,14 +17,17 @@ public:
     bool isScanning();
 
     const NimBLEAdvertisedDevice *getDevice(size_t index) const;
-    
+
 private:
   void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override;
   void onScanEnd(const NimBLEScanResults &results, int reason) override;
 
 private:
-    const NimBLEAdvertisedDevice *advDevices[20] = {nullptr};
-    size_t advDeviceCount = 0;
+    // Copies, not pointers: NimBLE deletes the advertised devices held by the
+    // scan results as soon as scanning is (re)started, which would leave any
+    // stored pointers dangling.
+    NimBLEAdvertisedDevice advDevices[20];
+    int advDeviceCount = -1;
 };
 
 

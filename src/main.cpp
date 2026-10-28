@@ -64,9 +64,15 @@ extern "C" void app_main()
 
       while ((advDevice = bleScanner.getDevice(index++)) != nullptr)
       {
+        if (!bleClient.isAllowedDevice(advDevice))
+        {
+          continue;
+        }
+
+        bleScanner.StopScanning();
+       
         if (bleClient.connect(advDevice))
         {
-          bleScanner.StopScanning();
           break;
         }
       }

@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-// #define ENABLE_DEBUG_MESSAGES
+#define ENABLE_DEBUG_MESSAGES
 
 
 #ifdef ENABLE_DEBUG_MESSAGES
