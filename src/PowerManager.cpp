@@ -9,7 +9,7 @@ static constexpr uint32_t HOLD_FOR_DEEP_SLEEP_MS = 4 * 1000UL;
 /**
  *
  */
-PowerManager::PowerManager(Buttons &buttons, BleClient &bleClient, BleScanner &bleScanner)
+PowerManager::PowerManager(Buttons &buttons, IBleClient &bleClient, IBleScanner &bleScanner)
     : buttons(buttons), bleClient(bleClient), bleScanner(bleScanner)
 {
     esp_pm_config_esp32c3_t pm_config;

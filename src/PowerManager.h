@@ -3,8 +3,8 @@
 
 #include <Arduino.h>
 #include <buttons.h>
-#include "BleClient.h"
-#include "BleScanner.h"
+#include "IBleClient.h"
+#include "IBleScanner.h"
 
 /**
  *
@@ -12,7 +12,7 @@
 class PowerManager
 {
 public:
-    PowerManager(Buttons& buttons, BleClient& bleClient, BleScanner& bleScanner);
+    PowerManager(Buttons& buttons, IBleClient& bleClient, IBleScanner& bleScanner);
 
     void update();
 
@@ -21,8 +21,8 @@ private:
 
 private:
     Buttons &buttons;
-    BleClient& bleClient;
-    BleScanner& bleScanner;
+    IBleClient& bleClient;
+    IBleScanner& bleScanner;
     uint32_t lastPressMs = 0;
     uint32_t lastReleaseMs = 0;
 

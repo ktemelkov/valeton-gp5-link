@@ -1,13 +1,14 @@
 #include <Arduino.h>
-#include <NimBLEDevice.h>
 #include "esp_pm.h"
 #include "esp_sleep.h"
 #include "esp_err.h"
 
 #include "buttons.h"
-#include "BleScanner.h"
-#include "BleClient.h"
+#include "BleScannerIdf.h"
+#include "BleClientIdf.h"
+#include "BleAdvertisedDevice.h"
 #include "PowerManager.h"
+#include "PresetManager.h"
 #include "led.h"
 
 #include "debug.h"
@@ -17,13 +18,6 @@
 
 #define LED_PIN GPIO_NUM_8
 
-#define MIDI_MSG_BUTTON1 0
-#define MIDI_MSG_BUTTON2 1
-
-uint8_t MidiMessages[][5] = {
-    {0x80, 0x80, 0xB0, 0x01, 0x00}, // Control Change message with controller number set to 1 and value 0
-    {0x80, 0x80, 0xB0, 0x02, 0x00}  // Control Change message with controller number set to 2 and value 0
-};
 
 /**
  *
@@ -42,10 +36,11 @@ extern "C" void app_main()
   Buttons &buttons = Buttons::instance();
   buttons.begin((const uint8_t[]){BUTTON1_PIN, BUTTON2_PIN}, 2);
 
-  BleScanner bleScanner;
-  BleClient bleClient;
+  BleScannerIdf bleScanner;
+  BleClientIdf bleClient;
 
   PowerManager powerManager(buttons, bleClient, bleScanner);
+  PresetManager presetManager(bleClient);
 
   while (true)
   {
@@ -56,10 +51,11 @@ extern "C" void app_main()
       if (!bleScanner.isScanning())
       {
         bleScanner.StartScanning();
+        delay(50);
         continue;
       }
 
-      const NimBLEAdvertisedDevice *advDevice = nullptr;
+      const BleAdvertisedDevice *advDevice = nullptr;
       size_t index = 0;
 
       while ((advDevice = bleScanner.getDevice(index++)) != nullptr)
@@ -69,10 +65,14 @@ extern "C" void app_main()
           continue;
         }
 
+        DEBUG_MSG("Found allowed device: %s\n", advDevice->getName().c_str());
         bleScanner.StopScanning();
+
+        delay(50);
        
         if (bleClient.connect(advDevice))
         {
+          presetManager.reset();
           break;
         }
       }
@@ -83,13 +83,13 @@ extern "C" void app_main()
 
     if (buttons.getEvent(BUTTON1_PIN) == PRESSED)
     {
-      bleClient.send(MidiMessages[MIDI_MSG_BUTTON1], sizeof(MidiMessages[MIDI_MSG_BUTTON1]));
+      presetManager.nextPreset();
       led.toggle();
     }
 
     if (buttons.getEvent(BUTTON2_PIN) == PRESSED)
     {
-      bleClient.send(MidiMessages[MIDI_MSG_BUTTON2], sizeof(MidiMessages[MIDI_MSG_BUTTON2]));
+      presetManager.nextGroup();
       led.toggle();
     }
 
