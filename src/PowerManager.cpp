@@ -1,7 +1,14 @@
-#include <PowerManager.h>
-#include "debug.h"
-#include <esp32c3/pm.h>
-#include <esp_pm.h>
+#include "PowerManager.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "esp_pm.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_sleep.h"
+
+static const char *TAG = "PowerManager";
 
 static constexpr uint32_t DEEP_SLEEP_IDLE_MS = 15UL * 60UL * 1000UL;
 static constexpr uint32_t HOLD_FOR_DEEP_SLEEP_MS = 4 * 1000UL;
@@ -9,8 +16,8 @@ static constexpr uint32_t HOLD_FOR_DEEP_SLEEP_MS = 4 * 1000UL;
 /**
  *
  */
-PowerManager::PowerManager(Buttons &buttons, IBleClient &bleClient, IBleScanner &bleScanner)
-    : buttons(buttons), bleClient(bleClient), bleScanner(bleScanner)
+PowerManager::PowerManager(Buttons &buttons)
+    : buttons(buttons)
 {
     esp_pm_config_esp32c3_t pm_config;
     pm_config.max_freq_mhz = 40;         // Set maximum CPU frequency to 40 MHz
@@ -22,9 +29,10 @@ PowerManager::PowerManager(Buttons &buttons, IBleClient &bleClient, IBleScanner 
 /**
  *
  */
-void PowerManager::update()
+bool PowerManager::shouldSleep()
 {
     bool shouldSleep = false;
+    uint32_t nowMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
 
     for (size_t i = 0; i < buttons.getButtonCount(); ++i)
     {
@@ -32,36 +40,35 @@ void PowerManager::update()
 
         if (event == PRESSED)
         {
-            lastPressMs = millis();
+            lastPressMs = nowMs;
         }
         else if (event == RELEASED)
         {
-            if (lastPressMs > lastReleaseMs && (uint32_t)(millis() - lastPressMs) >= HOLD_FOR_DEEP_SLEEP_MS)
+            if (lastPressMs > lastReleaseMs && (uint32_t)(nowMs - lastPressMs) >= HOLD_FOR_DEEP_SLEEP_MS)
             {
-                DEBUG_MSG("A button is being held for %u ms, entering deep sleep.\n", HOLD_FOR_DEEP_SLEEP_MS);
+                ESP_LOGI(TAG, "A button is being held for %u ms, entering deep sleep.\n", HOLD_FOR_DEEP_SLEEP_MS);
                 shouldSleep = true;
             }
 
-            lastReleaseMs = millis();
+            lastReleaseMs = nowMs;
         }
     }
 
-    if ((uint32_t)(millis() - lastPressMs) >= DEEP_SLEEP_IDLE_MS)
+    if ((uint32_t)(nowMs - lastPressMs) >= DEEP_SLEEP_IDLE_MS)
     {
-        DEBUG_MSG("No button press for %u ms, entering deep sleep.\n", DEEP_SLEEP_IDLE_MS);
+        ESP_LOGI(TAG, "No button press for %u ms, entering deep sleep.\n", DEEP_SLEEP_IDLE_MS);
         shouldSleep = true;
     }
 
-    if (shouldSleep)
-    {
-        bleClient.disconnect();
-        bleScanner.StopScanning();
+    return shouldSleep;
+}
 
-        configureButtonWakeupForDeepSleep();
+void PowerManager::doSleep()
+{
+    configureButtonWakeupForDeepSleep();
 
-        delay(20);
-        esp_deep_sleep_start();
-    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+    esp_deep_sleep_start();
 }
 
 /**
@@ -69,13 +76,10 @@ void PowerManager::update()
  */
 void PowerManager::configureButtonWakeupForDeepSleep()
 {
-    // Keep pins in a known state before sleep.
     uint64_t wakeMask = 0;
     for (size_t i = 0; i < buttons.getButtonCount(); ++i)
     {
         uint8_t pin = buttons.getPins()[i];
-
-        pinMode(pin, INPUT_PULLUP);
         wakeMask |= (1ULL << pin);
     }
 

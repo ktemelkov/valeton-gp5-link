@@ -1,12 +1,15 @@
 #include "PresetManager.h"
 
+#include "esp_log.h"
 #include "gp5.h"
-#include "debug.h"
+
+
+static const char *TAG = "PresetManager";
 
 /**
  *
  */
-PresetManager::PresetManager(IBleClient &bleClient) : bleClient(bleClient)
+PresetManager::PresetManager()
 {
     currentPresetIndex = 0;
     currentGroupIndex = 0;
@@ -15,95 +18,110 @@ PresetManager::PresetManager(IBleClient &bleClient) : bleClient(bleClient)
 /**
  *
  */
-void PresetManager::reset()
+BLEMessage PresetManager::reset()
 {
     currentPresetIndex = 0;
     currentGroupIndex = 0;
 
-    apply();
+    return apply();
 }
 
 /**
  *
  */
-void PresetManager::apply()
+BLEMessage PresetManager::apply()
 {
-    DEBUG_MSG("Applying preset: Group %d, Preset %d", currentGroupIndex, currentPresetIndex);
-
-    (this->*presets[currentGroupIndex][currentPresetIndex])();
+    return (this->*presets[currentGroupIndex][currentPresetIndex])();
 }
 
 /**
  *
  */
-void PresetManager::firstPreset()
+BLEMessage PresetManager::firstPreset()
 {
     currentPresetIndex = 0;
-    apply();
+    return apply();
 }
 
 /**
  *
  */
-void PresetManager::nextPreset()
+BLEMessage PresetManager::nextPreset()
 {
     currentPresetIndex++;
-    apply();
+    return apply();
 }
 
 /**
  *
  */
-void PresetManager::nextGroup()
+BLEMessage PresetManager::nextGroup()
 {
     currentGroupIndex = (currentGroupIndex + 1) % NUM_GROUPS;
-    firstPreset();
+    return firstPreset();
 }
 
 /**
  *
  */
-void PresetManager::setRythm()
+BLEMessage PresetManager::setRythm()
 {
-    bleClient.send(Preset_0, sizeof(Preset_0));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+
+    BLEMessage msg = { Preset_0, sizeof(Preset_0) };
+    return msg;
 }
 
 /**
  *
  */
-void PresetManager::setSolo()
+BLEMessage PresetManager::setSolo()
 {
-    bleClient.send(Preset_1, sizeof(Preset_1));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+
+    BLEMessage msg = { Preset_1, sizeof(Preset_1) };
+    return msg;
 }
 
 /**
  *
  */
-void PresetManager::setClean()
+BLEMessage PresetManager::setClean()
 {
-    bleClient.send(Preset_2, sizeof(Preset_2));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+    BLEMessage msg = { Preset_2, sizeof(Preset_2) };
+    return msg;
 }
 
 /**
  *
  */
-void PresetManager::setDropRythm()
+BLEMessage PresetManager::setDropRythm()
 {
-    bleClient.send(Preset_3, sizeof(Preset_3));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+
+    BLEMessage msg = { Preset_3, sizeof(Preset_3) };
+    return msg;
 }
 
 /**
  *
  */
-void PresetManager::setDropSolo()
+BLEMessage PresetManager::setDropSolo()
 {
-    bleClient.send(Preset_4, sizeof(Preset_4));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+
+    BLEMessage msg = { Preset_4, sizeof(Preset_4)};
+    return msg;
 }
 
 /**
  *
  */
-void PresetManager::setSouthOfIntro()
+BLEMessage PresetManager::setSouthOfIntro()
 {
-    bleClient.send(Preset_11, sizeof(Preset_11));
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+    
+    BLEMessage msg = { Preset_11, sizeof(Preset_11) };
+    return msg;
 }

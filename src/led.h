@@ -1,7 +1,7 @@
 #ifndef __LED_H
 #define __LED_H
 
-#include <Arduino.h>
+#include <stdint.h>
 
 /**
  * 
@@ -17,7 +17,7 @@ public:
 
 private:
     uint8_t _pin;
-    uint8_t _state = HIGH;
+    uint8_t _state = 0;
 };
 
 #endif // __LED_H

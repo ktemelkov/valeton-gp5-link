@@ -1,98 +1,89 @@
-#include <Arduino.h>
-#include "esp_pm.h"
-#include "esp_sleep.h"
-#include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-#include "buttons.h"
-#include "BleScannerIdf.h"
-#include "BleClientIdf.h"
-#include "BleAdvertisedDevice.h"
-#include "PowerManager.h"
+#include "hal/gpio_types.h"
+#include "esp_log.h"
+
+#include "Led.h"
+#include "Buttons.h"
 #include "PresetManager.h"
-#include "led.h"
+#include "PowerManager.h"
 
-#include "debug.h"
+#include "BleScanner.h"
+#include "BleClient.h"
 
 #define BUTTON1_PIN GPIO_NUM_5
 #define BUTTON2_PIN GPIO_NUM_4
 
-#define LED_PIN GPIO_NUM_8
-
+#define LED_PIN GPIO_NUM_21
 
 /**
  *
  */
-extern "C" void app_main()
+extern "C" void app_main(void)
 {
-  initArduino();
+    Led led(LED_PIN);
+    led.off();
 
-#ifdef ENABLE_DEBUG_MESSAGES
-  Serial.begin(115200);
-  delay(1000);
-#endif
+    const uint8_t buttonPins[] = {BUTTON1_PIN, BUTTON2_PIN};
+    Buttons &buttons = Buttons::instance();
+    buttons.begin(buttonPins, sizeof(buttonPins) / sizeof(buttonPins[0]));
 
-  Led led(LED_PIN);
+    PowerManager powerManager(buttons);
+    PresetManager presetManager;
 
-  Buttons &buttons = Buttons::instance();
-  buttons.begin((const uint8_t[]){BUTTON1_PIN, BUTTON2_PIN}, 2);
+    BleScanner bleScanner;
+    BleClient bleClient;
 
-  BleScannerIdf bleScanner;
-  BleClientIdf bleClient;
-
-  PowerManager powerManager(buttons, bleClient, bleScanner);
-  PresetManager presetManager(bleClient);
-
-  while (true)
-  {
-    powerManager.update();
-
-    if (!bleClient.isConnected())
+    if (!bleScanner.Init())
     {
-      if (!bleScanner.isScanning())
-      {
-        bleScanner.StartScanning();
-        delay(50);
-        continue;
-      }
+        ESP_LOGE("main", "Failed to initialize BLE scanner.");
+        return;
+    }
 
-      const BleAdvertisedDevice *advDevice = nullptr;
-      size_t index = 0;
+    bleScanner.StartScanning();
 
-      while ((advDevice = bleScanner.getDevice(index++)) != nullptr)
-      {
-        if (!bleClient.isAllowedDevice(advDevice))
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+
+        if (powerManager.shouldSleep())
         {
-          continue;
+            bleClient.Disconnect();
+            bleScanner.Shutdown();
+            powerManager.doSleep();
         }
 
-        DEBUG_MSG("Found allowed device: %s\n", advDevice->getName().c_str());
-        bleScanner.StopScanning();
-
-        delay(50);
-       
-        if (bleClient.connect(advDevice))
+        if (!bleClient.IsConnected())
         {
-          presetManager.reset();
-          break;
+            if (!bleScanner.IsScanning())
+            {
+                bleScanner.StartScanning();
+                continue;
+            }
+
+            ble_addr_t device;
+            if (!bleScanner.GetFoundDevice(device))
+            {
+                continue;
+            }
+
+            bleScanner.StopScanning();
+            bleClient.Connect(device);
+            continue;
         }
-      }
 
-      delay(5);
-      continue;
+        if (buttons.getEvent(BUTTON1_PIN) == PRESSED)
+        {
+            led.toggle();
+            auto msg = presetManager.nextPreset();
+            bleClient.Send(msg.data, msg.length);
+        }
+
+        if (buttons.getEvent(BUTTON2_PIN) == PRESSED)
+        {
+            led.toggle();
+            auto msg = presetManager.nextGroup();
+            bleClient.Send(msg.data, msg.length);
+        }        
     }
-
-    if (buttons.getEvent(BUTTON1_PIN) == PRESSED)
-    {
-      presetManager.nextPreset();
-      led.toggle();
-    }
-
-    if (buttons.getEvent(BUTTON2_PIN) == PRESSED)
-    {
-      presetManager.nextGroup();
-      led.toggle();
-    }
-
-    delay(20);
-  }
 }
