@@ -3,19 +3,6 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 
-namespace {
-
-// The user LED is wired active-low (pulling the pin down lights it), same as the
-// original Arduino implementation which wrote LOW from on().
-constexpr uint32_t kActiveLevel = 0;
-constexpr uint32_t kInactiveLevel = 1;
-
-inline void writeLevel(uint8_t pin, uint8_t state)
-{
-    gpio_set_level(static_cast<gpio_num_t>(pin), state ? kActiveLevel : kInactiveLevel);
-}
-
-} // namespace
 
 /**
  * Configures the pin as a push-pull output and starts with the LED off.
@@ -65,4 +52,13 @@ void Led::toggle()
     _state = _state ? 0 : 1;
     writeLevel(_pin, _state);
 }
+
+/**
+ * Sets the GPIO pin to the specified state, inverting the logic for active-low LED.
+ */
+void Led::writeLevel(uint8_t pin, uint8_t state)
+{
+    gpio_set_level(static_cast<gpio_num_t>(pin), state ? 0 : 1);
+}
+
 

@@ -8,30 +8,6 @@
 
 static const char *TAG = "Buttons";
 
-namespace
-{
-
-    // Guards the event slots shared between the GPIO ISR and readers.
-    portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
-
-    // Only one GPIO ISR service may exist for the whole app.
-    bool s_isrServiceInstalled = false;
-
-    // Set by begin() before any handler can fire, so the ISR never has to go
-    // through instance()'s lazy-initialisation guard.
-    Buttons *s_self = NULL;
-
-    // Debounce window in microseconds, so the ISR needs no 64-bit division.
-    constexpr uint32_t kDebounceUs = DEBOUNCE_MS * 1000U;
-
-    // ISR-safe tick (esp_timer_get_time is placed in IRAM); wraps every ~71 min,
-    // which the unsigned subtraction below handles correctly.
-    inline uint32_t nowUs()
-    {
-        return static_cast<uint32_t>(esp_timer_get_time());
-    }
-
-} // namespace
 
 /**
  *
@@ -49,7 +25,6 @@ Buttons &Buttons::instance()
 void Buttons::begin(const uint8_t *buttonPins, uint16_t buttonCount)
 {
     _buttonCount = 0;
-    s_self = this;
 
     if (buttonPins == NULL || buttonCount == 0)
     {
@@ -57,15 +32,11 @@ void Buttons::begin(const uint8_t *buttonPins, uint16_t buttonCount)
         return;
     }
 
-    if (!s_isrServiceInstalled)
+    esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
     {
-        esp_err_t err = gpio_install_isr_service(0);
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
-        {
-            ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(err));
-            return;
-        }
-        s_isrServiceInstalled = true;
+        ESP_LOGE(TAG, "gpio_install_isr_service failed: %s", esp_err_to_name(err));
+        return;
     }
 
     const uint16_t count = (buttonCount > MAX_BUTTONS) ? MAX_BUTTONS : buttonCount;
@@ -113,11 +84,21 @@ ButtonEvent Buttons::getEvent(uint8_t buttonPin, bool clearEvent)
 {
     ButtonEvent event = NO_CHANGE;
 
-    portENTER_CRITICAL(&s_mux);
-
     const uint8_t index = indexOfPin(buttonPin);
+
     if (index != 0xff)
     {
+        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+       
+        if ((now - _lastIsr[index]) > HOLD_MS && _stableLevel[index] == 0)
+        {
+            if (_btnEvent[index] == HOLD)
+                return NO_CHANGE;
+
+            _btnEvent[index] = HOLD;
+            return _btnEvent[index];
+        }
+
         event = _btnEvent[index];
         if (clearEvent)
         {
@@ -125,7 +106,6 @@ ButtonEvent Buttons::getEvent(uint8_t buttonPin, bool clearEvent)
         }
     }
 
-    portEXIT_CRITICAL(&s_mux);
     return event;
 }
 
@@ -153,12 +133,7 @@ uint8_t Buttons::indexOfPin(uint8_t buttonPin) const
  */
 void Buttons::isr(void *args)
 {
-    Buttons *self = s_self;
-    if (self == NULL)
-    {
-        return;
-    }
-    self->handleInterrupt(static_cast<uint8_t>(reinterpret_cast<uintptr_t>(args)));
+    instance().handleInterrupt(static_cast<uint8_t>(reinterpret_cast<uintptr_t>(args)));
 }
 
 /**
@@ -172,9 +147,9 @@ void Buttons::handleInterrupt(uint8_t index)
         return;
     }
 
-    const uint32_t now = nowUs();
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
-    if ((now - _lastIsr[index]) < kDebounceUs)
+    if ((now - _lastIsr[index]) < DEBOUNCE_MS)
     {
         return;
     }

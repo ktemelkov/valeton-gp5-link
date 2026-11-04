@@ -2,7 +2,7 @@
 #define __AUTO_SLEEP_H
 
 #include <stdint.h>
-#include <buttons.h>
+#include <stddef.h>
 
 /**
  *
@@ -10,16 +10,14 @@
 class PowerManager
 {
 public:
-    PowerManager(Buttons& buttons);
+    PowerManager();
+
+    void triggerWatchdog();
 
     bool shouldSleep();
-    void doSleep();
+    void doSleep(const uint8_t* wakePins, size_t wakePinCount);
 
 private:
-    void configureButtonWakeupForDeepSleep();
-
-private:
-    Buttons &buttons;
     uint32_t lastPressMs = 0;
     uint32_t lastReleaseMs = 0;
 };

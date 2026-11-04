@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /**
- * 
+ *
  */
 class Led
 {
@@ -14,6 +14,9 @@ public:
     void on();
     void off();
     void toggle();
+
+private:
+    void writeLevel(uint8_t pin, uint8_t state);
 
 private:
     uint8_t _pin;

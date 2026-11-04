@@ -15,6 +15,19 @@ Modifications made to the guitar includes:
 
 The volume and tone push-push potentiometers are wired to the ESP32-C3 GPIO 4 and GPIO 5 and are used to switch to the next preset in current preset group, and to switch to the next preset group respectively.
 
+### BLE preset messages
+
+Preset changes use 24-byte BLE-MIDI SysEx packets, including the two-byte
+`80 80` prefix and six trailing zero payload bytes before `F7`. The GP-5
+characteristic is written without response, matching the working guitar-switch
+implementation. The negotiated ATT MTU must be at least 27 so the complete
+packet fits in one write; undersized MTUs and write failures are logged.
+A successful write means the packet was queued, not that the GP-5 confirmed a
+preset change.
+
+Run the packet regression check with
+`powershell -NoProfile -File .\test\gp5_packets.Tests.ps1`.
+
 ## Hardware
 
 - Seeed Studio XIAO ESP32C3 board

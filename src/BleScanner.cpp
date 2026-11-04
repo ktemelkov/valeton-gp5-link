@@ -1,277 +1,141 @@
 #include "BleScanner.h"
 
-#include <string>
-#include "esp_log.h"
+#include <string.h>
+#include <esp_log.h>
 
-#include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
-#include "host/ble_hs.h"
-#include "host/ble_hs_id.h"
+static constexpr const char *TAG = "BleScanner";
 
-SemaphoreHandle_t BleScanner::syncNimbleInit = nullptr;
+// Target 128-bit Service and Characteristic UUIDs
+static const char *MIDI_Service_UUID_Str = "03B80E5A-EDE8-4B33-A751-6CE34EC4C700";
+static const char *BLE_Device_Name = "GP-5 BLE Kalin";
+
 
 /**
- * The object is usable as soon as it exists. The Bluetooth stack is only
- * brought up by the first StartScanning(), so a device that never scans never
- * pays for the controller or the host task.
+ * Constructor for the BleScanner class.
  */
 BleScanner::BleScanner()
 {
-    lockFoundAddress = xSemaphoreCreateMutex();
+    ESP_LOGI(TAG, "Starting BLE Scanner ...\n");
+
+    NimBLEDevice::init("");
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
+    // Allow bonding: many BLE MIDI peripherals refuse to pair (and drop the
+    // link shortly after connecting) unless bonding is enabled.
+    NimBLEDevice::setSecurityAuth(true, false, true);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
+
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    pScan->setScanCallbacks(this);
+    pScan->setInterval(97);
+    pScan->setWindow(67);
+
+    lockDeviceAddress = xSemaphoreCreateMutex();
+
+    if (lockDeviceAddress == nullptr)
+    {
+        ESP_LOGE(TAG, "%s", "Failed to create the lockDeviceAddress semaphore.");
+    }
 }
 
 /**
- * Cancels a discovery procedure that is still running. The NimBLE host task is
- * deliberately left running: tearing it down also stops the controller and
- * cannot be done safely from an arbitrary task.
+ * Destructor for the BleScanner class.
  */
 BleScanner::~BleScanner()
 {
-    if (lockFoundAddress != nullptr)
-    {
-        vSemaphoreDelete(lockFoundAddress);
-        lockFoundAddress = nullptr;
-    }
+    NimBLEDevice::getScan()->setScanCallbacks(nullptr);
 }
 
 /**
- * Initialise the BLE scanner. Returns true on success.
- */
-bool BleScanner::Init()
-{
-    if (syncNimbleInit != nullptr)
-    {
-        ESP_LOGE(TAG, "%s", "BLE scanner already initialized.");
-        return false; // already initialized
-    }
-
-    // Initialises and enables the controller, then the NimBLE host.
-    const esp_err_t err = nimble_port_init();
-
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "nimble_port_init failed: %d", err);
-        return false;
-    }
-
-    syncNimbleInit = xSemaphoreCreateBinary();
-    if (syncNimbleInit == nullptr)
-    {
-        ESP_LOGE(TAG, "%s", "Failed to create the sync semaphore.");
-        return false;
-    }
-
-    // Scanning needs no security, so only the two lifecycle notifications are
-    // wired up. Leaving the store callbacks NULL is safe: with no pairing they
-    // are never dereferenced.
-    ble_hs_cfg.sync_cb = &BleScanner::onHostSync;
-    ble_hs_cfg.reset_cb = &BleScanner::onHostReset;
-
-    // Spawns the "nimble_host" task that drains the default event queue. The
-    // GAP callback handed to ble_gap_disc() runs on that task, never here.
-    nimble_port_freertos_init(&BleScanner::hostTask);
-
-    // The calls above only queue the host start; wait for the HCI reset and
-    // read-version handshake to complete before the first real command.
-    const BaseType_t synced = xSemaphoreTake(syncNimbleInit, pdMS_TO_TICKS(2000));
-
-    vSemaphoreDelete(syncNimbleInit);
-    syncNimbleInit = nullptr;
-
-    if (synced != pdTRUE)
-    {
-        ESP_LOGE(TAG, "NimBLE host did not sync (ble_hs_synced()=%d).", ble_hs_synced());
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * Shutdown the BLE scanner and release resources.
- */
-void BleScanner::Shutdown()
-{
-    StopScanning();
-}
-
-/**
- * Start a BLE scan with the configured parameters.
  *
- * @return true if the scan was successfully started, false otherwise.
  */
 bool BleScanner::StartScanning()
 {
-    if (pdTRUE != xSemaphoreTake(lockFoundAddress, pdMS_TO_TICKS(20)))
+    if (pdTRUE != xSemaphoreTake(lockDeviceAddress, pdMS_TO_TICKS(20)))
     {
-        ESP_LOGE(TAG, "Failed to take lockFoundAddress semaphore.");
+        ESP_LOGE(TAG, "Failed to take lockDeviceAddress semaphore.");
         return false;
     }
-    memset(&foundAddress, 0, sizeof(foundAddress));
-    xSemaphoreGive(lockFoundAddress);
+    advDeviceAddress = NimBLEAddress();
+    xSemaphoreGive(lockDeviceAddress);
 
-    ble_gap_disc_params params;
-    memset(&params, 0, sizeof(params));
-
-    params.itvl = 97;
-    params.window = 67;
-    params.passive = 0;           // Active scanning: the scan request makes the peer answer with a SCAN_RSP, and the GP-5 only carries its complete local name in that response.
-    params.filter_duplicates = 0; // Duplicate filtering suppresses the SCAN_RSP of an address already reported, so it must stay off or the name never arrives.
-    params.filter_policy = 0;     // 0 = accept every advertiser; the whitelist is not used.
-    params.limited = 0;
-
-    uint8_t ownAddrType = BLE_OWN_ADDR_PUBLIC;
-    const int addrRc = ble_hs_id_infer_auto(0, &ownAddrType);
-
-    if (addrRc != 0)
-    {
-        ESP_LOGE(TAG, "ble_hs_id_infer_auto failed: %d", addrRc);
-        return false;
-    }
-
-    const int rc = ble_gap_disc(ownAddrType, BLE_HS_FOREVER, &params, &BleScanner::gapEvent, this); // BLE_HS_FOREVER keeps the procedure running until StopScanning();
-                                                                                                    // passing 0 here would instead select the stack's short default duration.
-    if (rc != 0 && rc != BLE_HS_EALREADY)
-    {
-        ESP_LOGE(TAG, "ble_gap_disc failed: %d", rc);
-        return false;
-    }
-
-    return true;
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    pScan->setActiveScan(true);
+    return pScan->start(0 /* scan forever */, false, true);
 }
 
 /**
- * Stop the ongoing BLE scan if any.
  *
- * @return true if scanning was successfully stopped or was not active, false otherwise.
  */
 bool BleScanner::StopScanning()
 {
-    const int ret = ble_gap_disc_cancel();
+    NimBLEScan *pScan = NimBLEDevice::getScan();
 
-    if (ret != 0 && ret != BLE_HS_EALREADY)
-    {
-        ESP_LOGE(TAG, "ble_gap_disc_cancel failed: %d", ret);
-        return false;
-    }
+    for (int i = 0; i < 100 && !pScan->stop(); i++)
+        vTaskDelay(pdMS_TO_TICKS(10));
 
-    return true;
+    return pScan->stop();
 }
 
 /**
- * Check if a BLE scan is currently active.
+ * Checks if the BLE scanner is currently scanning.
  *
- * @return true if a scan is in progress, false otherwise.
+ * @return true if scanning, false otherwise.
  */
 bool BleScanner::IsScanning()
 {
-    // Asked of the stack instead of mirrored in a member: the procedure also
-    // ends by itself (controller reset, preempted by a connect) and a cached
-    // flag would drift out of sync with that.
-    return ble_gap_disc_active() != 0;
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    return pScan->isScanning();
 }
 
 /**
- * Get the address of the found target device, if any.
  *
- * @param addr Reference to a ble_addr_t structure to receive the address.
- *
- * @return true if a device has been found, false otherwise.
  */
-bool BleScanner::GetFoundDevice(ble_addr_t &addr)
+NimBLEAddress BleScanner::getDeviceAddress() const
 {
-    if (pdTRUE != xSemaphoreTake(lockFoundAddress, pdMS_TO_TICKS(20)))
+    if (pdTRUE != xSemaphoreTake(lockDeviceAddress, pdMS_TO_TICKS(20)))
     {
-        ESP_LOGE(TAG, "Failed to take lockFoundAddress semaphore.");
-        return false;
+        ESP_LOGE(TAG, "Failed to take lockDeviceAddress semaphore.");
+        return NimBLEAddress();
     }
-    memcpy(&addr, &foundAddress, sizeof(addr));
-    xSemaphoreGive(lockFoundAddress);
+    NimBLEAddress retAddr = advDeviceAddress;
+    xSemaphoreGive(lockDeviceAddress);
 
-    return (foundAddress.val[0] != 0 || foundAddress.val[1] != 0 || foundAddress.val[2] != 0 ||
-            foundAddress.val[3] != 0 || foundAddress.val[4] != 0 || foundAddress.val[5] != 0);
+    return retAddr;
 }
 
 /**
- * Handles GAP events from the NimBLE host.
- * Returns 0 on success.
+ *
  */
-int BleScanner::gapEvent(ble_gap_event *event, void *arg)
+void BleScanner::onResult(const NimBLEAdvertisedDevice *advertisedDevice)
 {
-    BleScanner *self = static_cast<BleScanner *>(arg);
+    if (advertisedDevice == nullptr)
+        return;
 
-    if (event == nullptr || self == nullptr)
+    ESP_LOGI(TAG, "\n%s", "Found BLE device\n");
+    ESP_LOGI(TAG, "%s\n\n", advertisedDevice->toString().c_str());
+
+    bool isOurDevice = advertisedDevice->isConnectable() &&
+                       advertisedDevice->isAdvertisingService(NimBLEUUID(MIDI_Service_UUID_Str)) &&
+                       advertisedDevice->getName().compare(BLE_Device_Name) == 0;
+
+    if (isOurDevice)
     {
-        return 0;
-    }
+        ESP_LOGI(TAG, "Found our BLE device.\n");
 
-    switch (event->type)
-    {
-    case BLE_GAP_EVENT_DISC:
-    {
-        // ESP_LOGI(TAG, "Discovered device: %02X:%02X:%02X:%02X:%02X:%02X",
-        //         event->disc.addr.val[5], event->disc.addr.val[4], event->disc.addr.val[3],
-        //         event->disc.addr.val[2], event->disc.addr.val[1], event->disc.addr.val[0]);
-
-        ble_hs_adv_fields fields;
-        int ret = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
-
-        if (ret != 0)
+        if (pdTRUE != xSemaphoreTake(lockDeviceAddress, pdMS_TO_TICKS(20)))
         {
-            // ESP_LOGE(TAG, "Failed to parse advertisement fields, ret=%d", ret);
-            return ret;
+            ESP_LOGE(TAG, "Failed to take lockDeviceAddress semaphore.");
+            return;
         }
-
-        if (fields.name_is_complete && fields.name_len == strlen(BleScanner::TARGET_DEVICE_NAME) && strncmp((const char *)fields.name, BleScanner::TARGET_DEVICE_NAME, fields.name_len) == 0)
-        {
-            ESP_LOGI(TAG, "Found target device with matching name: %s", std::string((const char *)fields.name, fields.name_len).c_str());
-
-            if (pdTRUE != xSemaphoreTake(self->lockFoundAddress, pdMS_TO_TICKS(20)))
-            {
-                ESP_LOGE(TAG, "Failed to take lockFoundAddress semaphore.");
-                return 0;
-            }
-            memcpy(&self->foundAddress, &event->disc.addr, sizeof(self->foundAddress));
-            xSemaphoreGive(self->lockFoundAddress);
-        }
-    }
-    break;
-
-    case BLE_GAP_EVENT_DISC_COMPLETE:
-        ESP_LOGI(TAG, "discovery complete, reason=%d", event->disc_complete.reason);
-        break;
-
-    default:
-        break;
-    }
-
-    return 0;
-}
-
-/**
- *
- */
-void BleScanner::onHostSync(void)
-{
-    if (BleScanner::syncNimbleInit != nullptr)
-    {
-        xSemaphoreGive(BleScanner::syncNimbleInit);
+        advDeviceAddress = advertisedDevice->getAddress();
+        xSemaphoreGive(lockDeviceAddress);
     }
 }
 
 /**
  *
  */
-void BleScanner::onHostReset(int reason)
+void BleScanner::onScanEnd(const NimBLEScanResults &results, int reason)
 {
-    ESP_LOGE(TAG, "NimBLE host reset, reason=%d", reason);
-}
-
-/**
- *
- */
-void BleScanner::hostTask(void *arg)
-{
-    (void)arg;
-    nimble_port_run();
+    ESP_LOGI(TAG, "Scan ended with reason: %d", reason);
 }

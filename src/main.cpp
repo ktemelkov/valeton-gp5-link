@@ -1,89 +1,106 @@
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
-#include "hal/gpio_types.h"
-#include "esp_log.h"
+#include "esp_pm.h"
+#include "esp_sleep.h"
+#include "esp_err.h"
 
-#include "Led.h"
-#include "Buttons.h"
-#include "PresetManager.h"
-#include "PowerManager.h"
-
+#include "led.h"
+#include "buttons.h"
 #include "BleScanner.h"
 #include "BleClient.h"
+
+#include "PowerManager.h"
+#include "PresetManager.h"
 
 #define BUTTON1_PIN GPIO_NUM_5
 #define BUTTON2_PIN GPIO_NUM_4
 
-#define LED_PIN GPIO_NUM_21
+#define LED_PIN GPIO_NUM_8
 
 /**
  *
  */
-extern "C" void app_main(void)
+extern "C" void app_main()
 {
-    Led led(LED_PIN);
-    led.off();
+  Led led(LED_PIN);
 
-    const uint8_t buttonPins[] = {BUTTON1_PIN, BUTTON2_PIN};
-    Buttons &buttons = Buttons::instance();
-    buttons.begin(buttonPins, sizeof(buttonPins) / sizeof(buttonPins[0]));
+  Buttons &buttons = Buttons::instance();
+  buttons.begin((const uint8_t[]){BUTTON1_PIN, BUTTON2_PIN}, 2);
 
-    PowerManager powerManager(buttons);
-    PresetManager presetManager;
+  BleScanner bleScanner;
+  BleClient bleClient;
 
-    BleScanner bleScanner;
-    BleClient bleClient;
+  PowerManager powerManager;
+  PresetManager presetManager;
 
-    if (!bleScanner.Init())
+  while (true)
+  {
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    if (powerManager.shouldSleep())
     {
-        ESP_LOGE("main", "Failed to initialize BLE scanner.");
-        return;
+      bleClient.Disconnect();
+      bleScanner.StopScanning();
+
+      powerManager.doSleep(buttons.getPins(), buttons.getButtonCount());
     }
 
-    bleScanner.StartScanning();
+    if (!bleClient.IsConnected())
+    {
+      if (!bleScanner.IsScanning())
+      {
+        bleScanner.StartScanning();
+        continue;
+      }
 
-    while (true) {
-        vTaskDelay(pdMS_TO_TICKS(20));
+      NimBLEAddress deviceAddress = bleScanner.getDeviceAddress();
 
-        if (powerManager.shouldSleep())
-        {
-            bleClient.Disconnect();
-            bleScanner.Shutdown();
-            powerManager.doSleep();
-        }
+      if (deviceAddress.isNull())
+      {
+        continue;
+      }
 
-        if (!bleClient.IsConnected())
-        {
-            if (!bleScanner.IsScanning())
-            {
-                bleScanner.StartScanning();
-                continue;
-            }
-
-            ble_addr_t device;
-            if (!bleScanner.GetFoundDevice(device))
-            {
-                continue;
-            }
-
-            bleScanner.StopScanning();
-            bleClient.Connect(device);
-            continue;
-        }
-
-        if (buttons.getEvent(BUTTON1_PIN) == PRESSED)
-        {
-            led.toggle();
-            auto msg = presetManager.nextPreset();
-            bleClient.Send(msg.data, msg.length);
-        }
-
-        if (buttons.getEvent(BUTTON2_PIN) == PRESSED)
-        {
-            led.toggle();
-            auto msg = presetManager.nextGroup();
-            bleClient.Send(msg.data, msg.length);
-        }        
+      bleScanner.StopScanning();
+      bleClient.Connect(deviceAddress);
+      continue;
     }
+
+    auto event1 = buttons.getEvent(BUTTON1_PIN);
+    auto event2 = buttons.getEvent(BUTTON2_PIN);
+
+    if (event1 == PRESSED)
+    {
+      led.toggle();
+      powerManager.triggerWatchdog();
+
+      BLEMessage msg = presetManager.nextPreset();
+      bleClient.Send(msg.data, msg.length);
+    }
+
+    if (event2 == PRESSED)
+    {
+      led.toggle();
+      powerManager.triggerWatchdog();
+
+      BLEMessage msg = presetManager.nextGroup();
+      bleClient.Send(msg.data, msg.length);
+    }
+
+    if (event1 == HOLD)
+    {
+      led.toggle();
+      powerManager.triggerWatchdog();
+
+      BLEMessage msg = presetManager.extGroup2();
+      bleClient.Send(msg.data, msg.length);
+    }
+
+    if (event2 == HOLD)
+    {
+      led.toggle();
+      powerManager.triggerWatchdog();
+
+      BLEMessage msg = presetManager.extGroup1();
+      bleClient.Send(msg.data, msg.length);
+    }
+  }
 }

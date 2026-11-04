@@ -8,7 +8,8 @@
 #include "esp_log.h"
 #include "esp_sleep.h"
 
-static const char *TAG = "PowerManager";
+
+static constexpr const char *TAG = "PowerManager";
 
 static constexpr uint32_t DEEP_SLEEP_IDLE_MS = 15UL * 60UL * 1000UL;
 static constexpr uint32_t HOLD_FOR_DEEP_SLEEP_MS = 4 * 1000UL;
@@ -16,12 +17,11 @@ static constexpr uint32_t HOLD_FOR_DEEP_SLEEP_MS = 4 * 1000UL;
 /**
  *
  */
-PowerManager::PowerManager(Buttons &buttons)
-    : buttons(buttons)
+PowerManager::PowerManager()
 {
-    esp_pm_config_esp32c3_t pm_config;
+    esp_pm_config_t pm_config;
     pm_config.max_freq_mhz = 40;         // Set maximum CPU frequency to 40 MHz
-    pm_config.min_freq_mhz = 2;          // Set minimum CPU frequency to 0 MHz
+    pm_config.min_freq_mhz = 2;          // Set minimum CPU frequency to 2 MHz
     pm_config.light_sleep_enable = true; // Enable light sleep mode
     esp_pm_configure(&pm_config);
 }
@@ -29,30 +29,19 @@ PowerManager::PowerManager(Buttons &buttons)
 /**
  *
  */
+void PowerManager::triggerWatchdog()
+{
+    uint32_t nowMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
+    lastPressMs = nowMs;
+}
+
+/**
+ * @brief Check if the system should enter deep sleep based on button activity and idle time.
+ */
 bool PowerManager::shouldSleep()
 {
     bool shouldSleep = false;
     uint32_t nowMs = static_cast<uint64_t>(esp_timer_get_time()) / 1000;
-
-    for (size_t i = 0; i < buttons.getButtonCount(); ++i)
-    {
-        ButtonEvent event = buttons.getEvent(buttons.getPins()[i], false);
-
-        if (event == PRESSED)
-        {
-            lastPressMs = nowMs;
-        }
-        else if (event == RELEASED)
-        {
-            if (lastPressMs > lastReleaseMs && (uint32_t)(nowMs - lastPressMs) >= HOLD_FOR_DEEP_SLEEP_MS)
-            {
-                ESP_LOGI(TAG, "A button is being held for %u ms, entering deep sleep.\n", HOLD_FOR_DEEP_SLEEP_MS);
-                shouldSleep = true;
-            }
-
-            lastReleaseMs = nowMs;
-        }
-    }
 
     if ((uint32_t)(nowMs - lastPressMs) >= DEEP_SLEEP_IDLE_MS)
     {
@@ -63,26 +52,23 @@ bool PowerManager::shouldSleep()
     return shouldSleep;
 }
 
-void PowerManager::doSleep()
-{
-    configureButtonWakeupForDeepSleep();
-
-    vTaskDelay(pdMS_TO_TICKS(20));
-    esp_deep_sleep_start();
-}
-
 /**
- *
+ * @brief Put the system into deep sleep and configure wakeup pins.
+ * @param wakePins Array of pins that can wake the system from deep sleep.
+ * @param wakePinCount Number of pins in the wakePins array.
  */
-void PowerManager::configureButtonWakeupForDeepSleep()
+void PowerManager::doSleep(const uint8_t *wakePins, size_t wakePinCount)
 {
     uint64_t wakeMask = 0;
-    for (size_t i = 0; i < buttons.getButtonCount(); ++i)
+    for (size_t i = 0; i < wakePinCount; ++i)
     {
-        uint8_t pin = buttons.getPins()[i];
+        uint8_t pin = wakePins[i];
         wakeMask |= (1ULL << pin);
     }
 
     ESP_ERROR_CHECK(esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL));
-    ESP_ERROR_CHECK(esp_deep_sleep_enable_gpio_wakeup(wakeMask, ESP_GPIO_WAKEUP_GPIO_LOW));
+    ESP_ERROR_CHECK(esp_deep_sleep_enable_gpio_wakeup(wakeMask, ESP_GPIO_WAKEUP_GPIO_LOW)); // Wake on LOW (button press)
+
+    vTaskDelay(pdMS_TO_TICKS(20));
+    esp_deep_sleep_start();
 }

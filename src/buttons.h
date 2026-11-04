@@ -7,13 +7,14 @@
 
 #define MAX_BUTTONS 10
 #define DEBOUNCE_MS 80
-
+#define HOLD_MS 1000
 
 enum ButtonEvent
 {
     NO_CHANGE = 0,
     PRESSED = 1,
-    RELEASED = 2
+    RELEASED = 2,
+    HOLD = 3,
 };
 
 enum ButtonState

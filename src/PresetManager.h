@@ -1,10 +1,11 @@
 #ifndef __PRESET_MANAGER_H__
 #define __PRESET_MANAGER_H__
 
-#include <cstddef>
 #include <cstdint>
+#include <cstddef>
 
-constexpr uint8_t NUM_GROUPS = 4;
+constexpr uint8_t NUM_GROUPS = 2;
+constexpr uint8_t NUM_EXT_GROUPS = 2;
 constexpr uint8_t NUM_PRESETS_PER_GROUP = 10;
 
 /**
@@ -13,12 +14,12 @@ constexpr uint8_t NUM_PRESETS_PER_GROUP = 10;
 struct BLEMessage
 {
     uint8_t* data;
-    uint16_t length;
+    size_t length;
 };
 
 
 /**
- *
+ * Manages presets and groups for the BLE device.
  */
 class PresetManager
 {
@@ -32,8 +33,12 @@ public:
     BLEMessage nextPreset();
     BLEMessage nextGroup();
 
+    BLEMessage extGroup1();
+    BLEMessage extGroup2();
+
 protected:
     BLEMessage setRythm();
+    BLEMessage setRythmAbyss();
     BLEMessage setSolo();
     BLEMessage setClean();
     BLEMessage setDropRythm();
@@ -47,11 +52,12 @@ private:
     uint8_t currentPresetIndex;
     uint8_t currentGroupIndex;
 
-    PresetCallback presets[NUM_GROUPS][NUM_PRESETS_PER_GROUP] = {
+    PresetCallback presets[NUM_GROUPS + NUM_EXT_GROUPS][NUM_PRESETS_PER_GROUP] = {
         {&PresetManager::setRythm, &PresetManager::setSolo, &PresetManager::firstPreset, 0, 0, 0, 0, 0, 0, 0},
-        {&PresetManager::setRythm, &PresetManager::setClean, &PresetManager::setRythm, &PresetManager::setSolo, &PresetManager::setRythm, &PresetManager::setClean, &PresetManager::reset, 0, 0, 0},
+        {&PresetManager::setDropRythm, &PresetManager::setDropSolo, &PresetManager::firstPreset, 0, 0, 0, 0, 0, 0, 0},
+        {&PresetManager::setRythmAbyss, &PresetManager::setClean, &PresetManager::setRythmAbyss, &PresetManager::setSolo, &PresetManager::setRythmAbyss, &PresetManager::setClean, &PresetManager::reset, 0, 0, 0},
         {&PresetManager::setSouthOfIntro, &PresetManager::reset, 0, 0, 0, 0, 0, 0, 0, 0},
-        {&PresetManager::setDropRythm, &PresetManager::setDropSolo, &PresetManager::firstPreset, 0, 0, 0, 0, 0, 0, 0}};
+    };
 };
 
 #endif // __PRESET_MANAGER_H__
