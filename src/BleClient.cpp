@@ -14,7 +14,7 @@ static const char *MIDI_Char_UUID_Str = "7772E5DB-3868-4112-A1A9-F2669D106BF3";
  *
  */
 BleClient::BleClient()
-    : midiChannel(nullptr)
+    : midiChannel(nullptr), lockChannel(nullptr), endpoint(nullptr)
 {
     lockChannel = xSemaphoreCreateMutex();
 
@@ -79,7 +79,11 @@ bool BleClient::Connect(const NimBLEAddress &deviceAddress)
         return false;
     }
 
-    if (!pChr->canNotify() || !pChr->subscribe(true, deviceNotifyCB))
+    if (!pChr->canNotify() || !pChr->subscribe(true,
+        [this](NimBLERemoteCharacteristic *characteristic, uint8_t *data, size_t length, bool isNotify)
+        {
+            deviceNotifyCB(characteristic, data, length, isNotify);
+        }))
     {
         ESP_LOGE(TAG, "Failed to subscribe to notifications.\n");
         pClient->disconnect();
@@ -179,6 +183,12 @@ bool BleClient::IsConnected() const
  */
 bool BleClient::Send(const uint8_t *data, size_t length)
 {
+    if (data == nullptr && length != 0)
+    {
+        ESP_LOGE(TAG, "Failed to send data: null packet buffer.");
+        return false;
+    }
+
     if (lockChannel != nullptr && pdTRUE == xSemaphoreTake(lockChannel, portMAX_DELAY))
     {
         if (!midiChannel)
@@ -192,11 +202,11 @@ bool BleClient::Send(const uint8_t *data, size_t length)
 
         // Avoid NimBLE's long-write path, which can truncate a SysEx packet.
         const uint16_t mtu = midiChannel->getClient()->getMTU();
-        if (length > mtu - 3)
+        if (mtu < 3 || length > static_cast<size_t>(mtu - 3))
         {
             xSemaphoreGive(lockChannel);
             ESP_LOGE(TAG, "MIDI packet (%u bytes) exceeds negotiated MTU payload (%u bytes).",
-                     static_cast<unsigned>(length), static_cast<unsigned>(mtu - 3));
+                     static_cast<unsigned>(length), mtu >= 3 ? static_cast<unsigned>(mtu - 3) : 0);
             return false;
         }
 
@@ -220,6 +230,15 @@ void BleClient::deviceNotifyCB(NimBLERemoteCharacteristic* pChr, uint8_t* data, 
 {
     ESP_LOGI(TAG, "Notification received from characteristic: %s", pChr->getUUID().toString().c_str());
     ESP_LOG_BUFFER_HEX(TAG, data, length);
+
+    if (endpoint == nullptr)
+    {
+        ESP_LOGE(TAG, "Failed to forward notification: BLE endpoint not configured.");
+        return;
+    }
+
+    if (!endpoint->Send(data, length))
+        ESP_LOGE(TAG, "Failed to forward MIDI notification to BLE endpoint.");
 }
 
 /**

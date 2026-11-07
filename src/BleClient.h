@@ -7,18 +7,22 @@
 #include <stdint.h>
 #include <NimBLEDevice.h>
 
+#include "BleEndpoint.h"
+
 /**
  * 
  */
-class BleClient : public NimBLEClientCallbacks
+class BleClient : public NimBLEClientCallbacks, public BleEndpoint
 {
 public:
     BleClient();
 
     bool Connect(const NimBLEAddress &deviceAddress);
     bool Disconnect();
-    bool Send(const uint8_t *data, size_t length);
+    bool Send(const uint8_t *data, size_t length) override;
     bool IsConnected() const;
+
+    void setup(BleEndpoint* endpoint) { this->endpoint = endpoint; }
 
 private:
   NimBLEClient *prepareClient();
@@ -35,11 +39,12 @@ private:
 
   void setMidiChannel(NimBLERemoteCharacteristic* channel);
  
-  static void deviceNotifyCB(NimBLERemoteCharacteristic* pChr, uint8_t* data, size_t length, bool isNotify);
+  void deviceNotifyCB(NimBLERemoteCharacteristic* pChr, uint8_t* data, size_t length, bool isNotify);
 
 private:
     NimBLERemoteCharacteristic* midiChannel;
     SemaphoreHandle_t lockChannel;
+    BleEndpoint* endpoint;
 };
 
 #endif // BLE_CLIENT_H

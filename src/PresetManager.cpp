@@ -30,7 +30,25 @@ BLEMessage PresetManager::reset()
  */
 BLEMessage PresetManager::apply()
 {
-    return (this->*presets[currentGroupIndex][currentPresetIndex])();
+    PresetAction action = presets[currentGroupIndex][currentPresetIndex];
+
+    if (action.action == PRESET_ACTION_SET)
+    {
+        return setPreset(action.arg);
+    }
+
+    if (action.action == PRESET_ACTION_RESET)
+    {
+        return reset();
+    }
+
+    if (action.action == PRESET_ACTION_FIRST)
+    {
+        return firstPreset();
+    }
+
+    BLEMessage msg = {nullptr, 0};
+    return msg;
 }
 
 /**
@@ -60,6 +78,9 @@ BLEMessage PresetManager::nextGroup()
     return firstPreset();
 }
 
+/**
+ *
+ */
 BLEMessage PresetManager::extGroup1()
 {
     currentPresetIndex = 0;
@@ -67,85 +88,23 @@ BLEMessage PresetManager::extGroup1()
     return apply();
 }
 
+/**
+ *
+ */
 BLEMessage PresetManager::extGroup2()
 {
     currentPresetIndex = 0;
     currentGroupIndex = 3;
     return apply();
 }
-/**
- *
- */
-BLEMessage PresetManager::setRythm()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[0], sizeof(Presets[0])};
-    return msg;
-}
 
 /**
  *
  */
-BLEMessage PresetManager::setRythmAbyss()
+BLEMessage PresetManager::setPreset(uint16_t arg)
 {
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
+    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d, Arg %d\r\n", currentGroupIndex, currentPresetIndex, arg);
 
-    BLEMessage msg = {Presets[12], sizeof(Presets[12])};
-    return msg;
-}
-
-/**
- *
- */
-BLEMessage PresetManager::setSolo()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[1], sizeof(Presets[1])};
-    return msg;
-}
-
-/**
- *
- */
-BLEMessage PresetManager::setClean()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[2], sizeof(Presets[2])};
-    return msg;
-}
-
-/**
- *
- */
-BLEMessage PresetManager::setDropRythm()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[3], sizeof(Presets[3])};
-    return msg;
-}
-
-/**
- *
- */
-BLEMessage PresetManager::setDropSolo()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[4], sizeof(Presets[4])};
-    return msg;
-}
-
-/**
- *
- */
-BLEMessage PresetManager::setSouthOfIntro()
-{
-    ESP_LOGI(TAG, "Applying preset: Group %d, Preset %d\r\n", currentGroupIndex, currentPresetIndex);
-
-    BLEMessage msg = {Presets[11], sizeof(Presets[11])};
+    BLEMessage msg = {Presets[arg], sizeof(Presets[arg])};
     return msg;
 }

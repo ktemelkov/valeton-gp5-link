@@ -10,6 +10,8 @@
 
 #include "PowerManager.h"
 #include "PresetManager.h"
+#include "BleApiService.h"
+
 
 #define BUTTON1_PIN GPIO_NUM_5
 #define BUTTON2_PIN GPIO_NUM_4
@@ -31,6 +33,10 @@ extern "C" void app_main()
 
   PowerManager powerManager;
   PresetManager presetManager;
+
+  BleApiService bleApiService;
+  bleClient.setup(&bleApiService);
+  bleApiService.setup(&bleClient);
 
   while (true)
   {

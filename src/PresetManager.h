@@ -13,10 +13,28 @@ constexpr uint8_t NUM_PRESETS_PER_GROUP = 10;
  */
 struct BLEMessage
 {
-    uint8_t* data;
+    uint8_t *data;
     size_t length;
 };
 
+struct PresetAction
+{
+    uint16_t action;
+    uint16_t arg;
+};
+
+#define PRESET_ACTION_NONE 0
+#define PRESET_ACTION_SET 1
+#define PRESET_ACTION_RESET 2
+#define PRESET_ACTION_FIRST 3
+
+#define PRESET_RYTHM 0
+#define PRESET_SOLO 1
+#define PRESET_CLEAN 2
+#define PRESET_DROP_RYTHM 3
+#define PRESET_DROP_SOLO 4
+#define PRESET_SOUTH_OF_INTRO 11
+#define PRESET_RYTHM_ABYSS 12
 
 /**
  * Manages presets and groups for the BLE device.
@@ -44,6 +62,8 @@ protected:
     BLEMessage setDropRythm();
     BLEMessage setDropSolo();
     BLEMessage setSouthOfIntro();
+
+    BLEMessage setPreset(uint16_t arg);
     BLEMessage firstPreset();
 
     BLEMessage apply();
@@ -52,11 +72,11 @@ private:
     uint8_t currentPresetIndex;
     uint8_t currentGroupIndex;
 
-    PresetCallback presets[NUM_GROUPS + NUM_EXT_GROUPS][NUM_PRESETS_PER_GROUP] = {
-        {&PresetManager::setRythm, &PresetManager::setSolo, &PresetManager::firstPreset, 0, 0, 0, 0, 0, 0, 0},
-        {&PresetManager::setDropRythm, &PresetManager::setDropSolo, &PresetManager::firstPreset, 0, 0, 0, 0, 0, 0, 0},
-        {&PresetManager::setRythmAbyss, &PresetManager::setClean, &PresetManager::setRythmAbyss, &PresetManager::setSolo, &PresetManager::setRythmAbyss, &PresetManager::setClean, &PresetManager::reset, 0, 0, 0},
-        {&PresetManager::setSouthOfIntro, &PresetManager::reset, 0, 0, 0, 0, 0, 0, 0, 0},
+    PresetAction presets[NUM_GROUPS + NUM_EXT_GROUPS][NUM_PRESETS_PER_GROUP] = {
+        {{PRESET_ACTION_SET, PRESET_RYTHM}, {PRESET_ACTION_SET, PRESET_SOLO}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
+        {{PRESET_ACTION_SET, PRESET_DROP_RYTHM}, {PRESET_ACTION_SET, PRESET_DROP_SOLO}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
+        {{PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_CLEAN}, {PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_SOLO}, {PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_CLEAN}, {PRESET_ACTION_RESET, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
+        {{PRESET_ACTION_SET, PRESET_SOUTH_OF_INTRO}, {PRESET_ACTION_RESET, 0}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
     };
 };
 

@@ -28,6 +28,25 @@ preset change.
 Run the packet regression check with
 `powershell -NoProfile -File .\test\gp5_packets.Tests.ps1`.
 
+### BLE MIDI proxy
+
+The firmware also advertises a BLE MIDI service as `GP5 BLE Kalin`. Connect a
+BLE MIDI controller to it and enable notifications on the MIDI characteristic.
+Writes (with or without response) are forwarded unchanged to the connected GP-5;
+GP-5 notifications are forwarded unchanged as notifications to the controller.
+The existing button-driven preset changes continue to write directly to the GP-5.
+
+Both links must negotiate an ATT MTU large enough for each packet (packet length
+plus three bytes). Packets are not split or truncated. Writes while the GP-5 is
+disconnected, notifications without a connected/subscribed controller, oversized
+packets, and transmission failures are logged; packets are not buffered or retried.
+
+Run the bidirectional proxy regression tests in a Visual Studio Developer
+PowerShell with C++ tools installed:
+`powershell -NoProfile -File .\test\ble_proxy.Tests.ps1`.
+These compile the actual BLE classes against test doubles; radio-level behavior
+still requires testing with a GP-5 and BLE MIDI controller.
+
 ## Hardware
 
 - Seeed Studio XIAO ESP32C3 board
