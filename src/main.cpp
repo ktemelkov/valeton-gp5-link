@@ -2,6 +2,7 @@
 #include "esp_pm.h"
 #include "esp_sleep.h"
 #include "esp_err.h"
+#include "esp_log.h"
 
 #include "led.h"
 #include "buttons.h"
@@ -23,6 +24,8 @@
  */
 extern "C" void app_main()
 {
+  esp_log_level_set("*", ESP_LOG_ERROR);
+
   Led led(LED_PIN);
 
   Buttons &buttons = Buttons::instance();
