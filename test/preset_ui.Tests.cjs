@@ -4,23 +4,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-test('refresh names precedes reload in the toolbar and help panels are removed', () => {
+test('toolbar has only reload and save and help panels are removed', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'docs', 'index.html'), 'utf8');
   const toolbar = html.match(/<div class="toolbar">([\s\S]*?)<\/div>\s*<p id="names-status"/)[1];
-  assert.ok(toolbar.indexOf('id="refresh-names"') < toolbar.indexOf('id="reload"'));
-  assert.equal((html.match(/id="refresh-names"/g) || []).length, 1);
+  assert.ok(toolbar.indexOf('id="reload"') < toolbar.indexOf('id="save"'));
+  assert.equal((toolbar.match(/<button /g) || []).length, 2);
+  assert.doesNotMatch(html, /refresh-names/);
   assert.doesNotMatch(html, /Make it yours|One press, one action|Names from your GP-5|class="sidebar"|class="workspace"/);
 });
 
 class Element extends EventTarget {
   constructor(tag = 'div') {
     super(); this.tag = tag; this.children = []; this.dataset = {};
-    this.classList = { toggle() {} }; this.textContent = ''; this.value = '';
+    this.classList = { toggle() {} }; this.textContent = ''; this.value = ''; this.attributes = {};
   }
   append(...children) { this.children.push(...children); }
   add(child) { this.append(child); }
   replaceChildren(...children) { this.children = children; }
-  setAttribute() {}
+  setAttribute(name, value) { this.attributes[name] = value; }
   querySelectorAll(selector) {
     const all = this.children.flatMap(child => [child, ...child.querySelectorAll('*')]);
     if (selector === '*') return all;
@@ -160,6 +161,52 @@ test('groups start collapsed and preserve expanded state across editor refreshes
   assert.equal(app.elements.get('groups').children[0].open, false);
 });
 
+test('compact groups keep named controls and paired navigation targets editable', () => {
+  const app = workspace();
+  app.run('groups = Array.from({length:16}, () => Array.from({length:8}, () => ({action:0,arg:0}))); render()');
+  const card = app.elements.get('groups').children[12];
+  const row = card.children[1];
+  assert.equal(card.children[0].children[0].children.length, 1, 'No duplicate group heading');
+  assert.equal(card.children[0].children[0].children[0].textContent, 'Extended group 1');
+  const type = row.children[1].children[0];
+  const targets = row.children[2].children[0];
+  assert.equal(targets.className, 'target-controls navigation');
+  assert.equal(targets.children.length, 2);
+  const [group, slot] = targets.children;
+  assert.match(type.attributes['aria-label'], /Extended group 1, action 1, type/);
+  assert.match(group.attributes['aria-label'], /destination group/);
+  assert.match(slot.attributes['aria-label'], /destination slot/);
+  group.value = '15'; slot.value = '7'; slot.onchange();
+  assert.equal(app.run('groups[12][0].arg'), 127);
+  assert.equal(app.run('dirty'), true);
+  type.value = '1'; type.onchange();
+  const presetTargets = app.elements.get('groups').children[12].children[1].children[2].children[0];
+  assert.equal(presetTargets.className, 'target-controls');
+  assert.equal(presetTargets.children.length, 1);
+  const preset = presetTargets.children[0];
+  assert.match(preset.attributes['aria-label'], /preset/);
+  preset.value = '99'; preset.onchange();
+  assert.equal(app.run('groups[12][0].arg'), 99);
+});
+
+test('connection controls show only the current action and notifications remain visible', async () => {
+  const app = workspace();
+  assert.equal(app.elements.get('connect').hidden, false);
+  assert.equal(app.elements.get('disconnect').hidden, true);
+  assert.equal(app.elements.get('device-info').hidden, true);
+  await app.run('connect()');
+  assert.equal(app.elements.get('connect').hidden, true);
+  assert.equal(app.elements.get('disconnect').hidden, false);
+  assert.equal(app.elements.get('device-info').hidden, false);
+  assert.equal(app.elements.get('names-status').hidden, false);
+  app.device.gatt.disconnect();
+  assert.equal(app.elements.get('connect').hidden, false);
+  assert.equal(app.elements.get('disconnect').hidden, true);
+  assert.equal(app.elements.get('device-info').hidden, true);
+  assert.equal(app.elements.get('message').hidden, false);
+  assert.match(app.elements.get('message').textContent, /Disconnected/);
+});
+
 test('connect loads actions and all 100 GP-5 names, honoring DataView offsets', async () => {
   const app = workspace();
   await app.run('connect()');
@@ -173,14 +220,57 @@ test('connect loads actions and all 100 GP-5 names, honoring DataView offsets', 
   assert.equal(app.elements.get('groups').children.length, 16);
 });
 
-test('refresh names repeats the sync handshake without collapsing an expanded group', async () => {
+test('reload replaces groups and refreshes names without collapsing an expanded group', async () => {
   const app = workspace();
   await app.run('connect()');
   app.elements.get('groups').children[0].open = true;
-  await app.elements.get('refresh-names').onclick();
+  app.run('groups[0][0] = {action:1,arg:99}; names[99] = "Stale name"; markDirty()');
+  const reload = app.elements.get('reload').onclick();
+  assert.equal(app.elements.get('reload').disabled, true);
+  assert.equal(app.elements.get('save').disabled, true);
+  await reload;
+  assert.equal(app.run('groups[0][0].arg'), 0);
+  assert.equal(app.run('dirty'), false);
+  assert.equal(app.elements.get('reload').disabled, false);
+  assert.equal(app.writes.filter(bytes => bytes[0] === 1 && bytes[1] === 1).length, 2);
   assert.deepEqual(app.writes.filter(bytes => bytes[0] === 128).map(bytes => bytes[3]), [0, 3, 0, 3]);
   assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
   assert.equal(app.elements.get('groups').children[0].open, true);
+});
+
+test('cancelled reload preserves edits and names without device requests', async () => {
+  const app = workspace();
+  await app.run('connect()');
+  app.run('groups[0][0].arg = 99; markDirty(); window.confirm = () => false');
+  const writesBefore = app.writes.length;
+  await app.elements.get('reload').onclick();
+  assert.equal(app.writes.length, writesBefore);
+  assert.equal(app.run('groups[0][0].arg'), 99);
+  assert.equal(app.run('dirty'), true);
+  assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
+});
+
+test('reload still refreshes names after a group load failure and reports the error', async () => {
+  const app = workspace();
+  await app.run('connect()');
+  app.run('loadGroups = async () => { throw new Error("Group load failed"); }; names[99] = "Stale name"');
+  await app.elements.get('reload').onclick();
+  assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
+  assert.match(app.elements.get('message').textContent, /Cannot load preset actions: Group load failed/);
+  assert.equal(app.elements.get('reload').disabled, false);
+});
+
+test('reload keeps freshly loaded groups when preset names are unavailable', async () => {
+  const app = workspace({ failNames: true });
+  await app.run('connect()');
+  app.run('groups[0][0].arg = 99; markDirty()');
+  await app.elements.get('reload').onclick();
+  assert.equal(app.run('groups[0][0].arg'), 0);
+  assert.equal(app.run('dirty'), false);
+  assert.equal(app.run('loaded'), true);
+  assert.equal(app.run('presetLabel(99)'), '99');
+  assert.match(app.elements.get('message').textContent, /Preset names unavailable/);
+  assert.equal(app.elements.get('reload').disabled, false);
 });
 
 test('normal end markers during sync and before name data do not abort loading', async () => {

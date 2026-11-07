@@ -13,25 +13,24 @@
 </head>
 <body>
   <header><div class="header-inner">
-    <div class="brand"><img src="./icon-192.png" alt="" width="44" height="44"><strong>GP5 Link</strong><span class="brand-label">PRESET STUDIO</span></div>
+    <div class="brand"><img src="./icon-192.png" alt="" width="44" height="44"><strong>GP5 Link</strong></div>
     <button id="install" hidden>Install app</button>
   </div></header>
   <main>
-    <div class="heading"><div><p class="eyebrow">Your guitar. Your workflow.</p><h1>A setlist at your fingertips.</h1><p class="subtitle">Build preset sequences for your guitar switch. Save them directly to your GP5 Link.</p></div></div>
     <p id="compatibility" class="notice warning" hidden></p>
     <section class="connection" aria-label="Bluetooth connection">
-      <div><span id="status" class="status">Disconnected</span><p id="device-info">Connect to your ESP32-C3 proxy to get started.</p></div>
-      <div class="button-row"><button id="connect" class="primary">Connect</button><button id="disconnect" disabled>Disconnect</button></div>
+      <div><span id="status" class="status">Disconnected</span><p id="device-info" hidden></p></div>
+      <div class="button-row"><button id="connect" class="primary">Connect</button><button id="disconnect" disabled hidden>Disconnect</button></div>
     </section>
-    <p id="message" class="notice" role="status" aria-live="polite">Your saved actions will load automatically after connecting.</p>
+    <p id="message" class="notice" role="status" aria-live="polite" hidden></p>
     <div class="toolbar">
-      <div><p class="eyebrow">Preset workspace</p><h2>Groups &amp; actions <span id="group-count" class="badge">0 groups</span></h2></div>
-      <div class="button-row"><button id="refresh-names" disabled>Refresh preset names</button><button id="reload" disabled>Reload from device</button><button id="save" class="primary" disabled>Save to device</button></div>
+      <div class="workspace-heading"><h1>Preset groups</h1><span id="group-count" class="badge">0 groups</span></div>
+      <div class="button-row"><button id="reload" title="Reload groups and refresh GP-5 preset names" disabled>Reload</button><button id="save" class="primary" title="Save groups to device" disabled>Save</button></div>
     </div>
-    <p id="names-status" class="small" role="status">Preset indexes 0-99. Names are requested when connected.</p>
-    <section id="groups" class="groups" aria-label="Preset groups"><div class="empty"><h3>Your next set starts here.</h3><p>Connect your GP5 Link to load its preset groups.</p></div></section>
+    <p id="names-status" class="small" role="status" hidden></p>
+    <section id="groups" class="groups" aria-label="Preset groups"><div class="empty"><p>Connect to load your preset groups.</p></div></section>
   </main>
-  <footer><span>GP5 Link / BLE preset manager</span><span id="offline-status" role="status">Offline cache pending</span></footer>
+  <footer><span id="offline-status" role="status">Offline cache pending</span></footer>
   <script>
     'use strict';
     const element = (id) => document.getElementById(id);
@@ -49,19 +48,22 @@
 
     function notify(text, error = false) {
       element('message').textContent = text;
+      element('message').hidden = false;
       element('message').classList.toggle('warning', error);
     }
     function connected() { return Boolean(characteristic && configurationCharacteristic && device?.gatt.connected); }
     function updateControls() {
       const online = connected();
       element('connect').disabled = !supported || online || busy;
+      element('connect').hidden = online;
       element('disconnect').disabled = !online;
+      element('disconnect').hidden = !online;
+      element('device-info').hidden = !online;
       element('reload').disabled = !online || busy;
       element('save').disabled = !online || busy || !loaded || !dirty;
-      element('refresh-names').disabled = !online || busy;
       element('status').textContent = online ? (busy ? 'Syncing' : 'Connected') : 'Disconnected';
       element('status').classList.toggle('connected', online);
-      element('group-count').textContent = `${groups.length} groups${dirty ? ' / unsaved' : ''}`;
+      element('group-count').textContent = `${groups.length}${dirty ? ' / unsaved' : ''}`;
       element('groups').querySelectorAll('button, select').forEach((control) => { control.disabled = busy; });
     }
     function markDirty() { dirty = true; updateControls(); }
@@ -80,12 +82,9 @@
         const heading = document.createElement('summary');
         heading.className = 'group-heading';
         const headingText = document.createElement('div');
-        const label = document.createElement('p');
-        label.className = 'eyebrow';
-        label.textContent = hold ? 'EXTENDED GROUP' : 'NORMAL GROUP';
         const name = document.createElement('h3');
         name.textContent = title;
-        headingText.append(label, name);
+        headingText.append(name);
         const count = document.createElement('span');
         count.className = 'badge';
         count.textContent = `${actions.length} slots`;
@@ -97,8 +96,8 @@
           const number = document.createElement('span');
           number.className = 'action-number';
           number.textContent = String(slot + 1).padStart(2, '0');
-          const typeLabel = document.createElement('label');
-          typeLabel.textContent = 'Action';
+          const typeLabel = document.createElement('div');
+          typeLabel.className = 'action-type';
           const type = document.createElement('select');
           type.setAttribute('aria-label', `${title}, action ${slot + 1}, type`);
           actionLabels.forEach((text, value) => {
@@ -108,15 +107,17 @@
           type.value = action.action;
           type.onchange = () => { action.action = Number(type.value); action.arg = 0; markDirty(); render(); };
           typeLabel.append(type);
-          const targetLabel = document.createElement('label');
-          targetLabel.textContent = action.action === 1 ? 'GP-5 preset' : 'Destination';
+          const targetLabel = document.createElement('div');
+          targetLabel.className = 'action-target';
+          const targets = document.createElement('span');
+          targets.className = action.action === 1 ? 'target-controls' : 'target-controls navigation';
           if (action.action === 1) {
             const select = document.createElement('select');
             select.setAttribute('aria-label', `${title}, action ${slot + 1}, preset`);
             for (let index = 0; index < 100; index++) select.add(new Option(presetLabel(index), index));
             select.value = action.arg;
             select.onchange = () => { action.arg = Number(select.value); markDirty(); };
-            targetLabel.append(select);
+            targets.append(select);
           } else {
             const group = document.createElement('select');
             group.setAttribute('aria-label', `${title}, slot ${slot + 1}, destination group`);
@@ -129,8 +130,9 @@
             destination.value = action.arg >> 4;
             const change = () => { action.arg = (Number(destination.value) << 4) | Number(group.value); markDirty(); };
             group.onchange = destination.onchange = change;
-            targetLabel.append(group, destination);
+            targets.append(group, destination);
           }
+          targetLabel.append(targets);
           row.append(number, typeLabel, targetLabel);
           card.append(row);
         });
@@ -230,6 +232,7 @@
     async function fetchNames() {
       const currentSession = session;
       names = Array(100).fill('');
+      element('names-status').hidden = false;
       element('names-status').textContent = 'Requesting preset names from the GP-5...';
       render();
       try {
@@ -270,6 +273,14 @@
       groups = list; loaded = true; dirty = false;
       render();
       notify('Preset actions loaded from your controller.');
+    }
+    async function reloadFromDevice() {
+      const currentSession = session;
+      // A missing/older management API must not prevent requesting GP-5 names.
+      try { await loadGroups(); }
+      catch (error) { if (session === currentSession) notify(`Cannot load preset actions: ${error.message}`, true); }
+      if (session !== currentSession || !connected()) return;
+      await fetchNames();
     }
     async function operation(work) {
       if (busy) return;
@@ -313,22 +324,17 @@
           throw new Error(`Connection failed: ${error.message}`);
         }
         loaded = false;
-        const connectionSession = session;
-        element('device-info').textContent = `${device.name || 'GP5 Proxy'} / configuration + MIDI services`;
+        element('device-info').textContent = device.name || 'GP5 Proxy';
         updateControls();
-        // A missing/older management API must not prevent requesting GP-5 names.
-        try { await loadGroups(); } catch (error) { notify(`Cannot load preset actions: ${error.message}`, true); }
-        if (session !== connectionSession || !connected()) return;
-        await fetchNames();
+        await reloadFromDevice();
       });
     }
     element('connect').onclick = connect;
     element('disconnect').onclick = () => device?.gatt.disconnect();
     element('reload').onclick = () => {
       if (dirty && !window.confirm('Discard unsaved changes and reload from the controller?')) return;
-      operation(loadGroups);
+      return operation(reloadFromDevice);
     };
-    element('refresh-names').onclick = () => operation(fetchNames);
     element('save').onclick = () => operation(async () => {
       validateGroups(groups);
       const requestToken = nextToken();

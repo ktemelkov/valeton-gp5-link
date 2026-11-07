@@ -77,7 +77,12 @@ installable [manifest](docs/manifest.json) and offline [service worker](docs/sw.
 Flash the updated ESP32-C3 firmware before using load/save. The page connects to
 `GP5 Proxy`, subscribes to the custom configuration and BLE MIDI characteristics, and automatically loads
 the controller's action list and requests GP-5 preset names. Bluetooth permission
-requires a click on **Connect via Bluetooth**; requests cannot run before that.
+requires a click on **Connect**; requests cannot run before that.
+
+The mobile workspace keeps **Reload** and **Save** on one row.
+Tap a group heading to expand its eight slots; navigation destinations show group
+and slot side by side. **Reload** loads the controller's groups and refreshes
+the GP-5 preset names.
 
 The map has 12 normal groups and four extended groups, each with eight fixed slots.
 Supported entries:
@@ -90,11 +95,11 @@ Supported entries:
 The group button advances among normal groups; an entry may navigate elsewhere.
 The two long presses select extended groups 1 and 2. Advancing past slot 8 wraps
 to slot 1. Slots and groups cannot be inserted/deleted because navigation uses
-fixed indexes. **Save to device** validates and commits the complete map in one request.
+fixed indexes. **Save** validates and commits the complete map in one request.
 The active configuration changes only after a successful commit and survives reboot;
 factory defaults are used when no saved configuration exists. Save does not alter
 the GP-5's sound presets. Failed saves retain the page's unsaved edits.
-**Reload from device** discards edits after confirmation.
+**Reload** discards edits after confirmation.
 
 The name fetch sends the GP-5 sync packet
 `80 80 F0 00 0E 00 01 00 00 00 02 01 02 04 00 F7`, then the name-list request
@@ -159,7 +164,7 @@ Run browser-independent UI/protocol regressions with
 validation, flash persistence and separate-characteristic routing using test
 doubles. Actual GP-5/radio interoperability still requires hardware testing.
 
-If **Refresh preset names** logs a notification failure, inspect its return code.
+If **Reload** logs a notification failure, inspect its return code.
 `rc=6` is `BLE_HS_ENOMEM` (host buffer exhaustion), not an MTU error. Sending
 from the incoming BLE callback can exhaust buffers during the 20-packet name-list
 burst; blocking/retrying there also prevents the host from releasing buffers.
@@ -184,7 +189,7 @@ connection/subscription through the failed refresh when reporting this issue.
 2. In **Settings > Pages**, choose **Deploy from a branch**, select your branch,
 	and choose **/docs** as the source folder.
 3. Open `https://<owner>.github.io/<repository>/` in desktop Chrome or Edge.
-4. Click **Connect via Bluetooth**, then select `GP5 Proxy` in the browser prompt.
+4. Click **Connect**, then select `GP5 Proxy` in the browser prompt.
    Keep the GP-5 powered on and connected to the ESP32-C3.
 5. Install using **Install app** when offered, or the browser's install menu.
 
