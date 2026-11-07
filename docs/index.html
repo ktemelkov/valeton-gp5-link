@@ -4,186 +4,359 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17694f">
-  <meta name="description" content="Valeton GP5 Link BLE MIDI terminal.">
+  <meta name="description" content="Manage guitar-switch preset groups over a binary BLE configuration service.">
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./icon-192.png">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <title>GP5 Link | BLE MIDI Terminal</title>
   <link rel="stylesheet" href="./styles.css">
+  <title>GP5 Link | Preset Manager</title>
 </head>
 <body>
   <header><div class="header-inner">
-    <div class="brand"><img src="./icon-192.png" alt="" width="44" height="44"><strong>GP5 Link</strong></div>
+    <div class="brand"><img src="./icon-192.png" alt="" width="44" height="44"><strong>GP5 Link</strong><span class="brand-label">PRESET STUDIO</span></div>
     <button id="install" hidden>Install app</button>
   </div></header>
   <main>
-    <div class="heading"><div><p class="eyebrow">Device workspace</p><h1>BLE MIDI Terminal</h1></div><span id="status" class="status">Disconnected</span></div>
-    <p id="compatibility" class="notice" hidden></p>
-    <p id="message" class="notice" role="status"></p>
+    <div class="heading"><div><p class="eyebrow">Your guitar. Your workflow.</p><h1>A setlist at your fingertips.</h1><p class="subtitle">Build preset sequences for your guitar switch. Save them directly to your GP5 Link.</p></div></div>
+    <p id="compatibility" class="notice warning" hidden></p>
+    <section class="connection" aria-label="Bluetooth connection">
+      <div><span id="status" class="status">Disconnected</span><p id="device-info">Connect to your ESP32-C3 proxy to get started.</p></div>
+      <div class="button-row"><button id="connect" class="primary">Connect via Bluetooth</button><button id="disconnect" disabled>Disconnect</button></div>
+    </section>
+    <p id="message" class="notice" role="status" aria-live="polite">Your saved actions will load automatically after connecting.</p>
+    <div class="toolbar">
+      <div><p class="eyebrow">Preset workspace</p><h2>Groups &amp; actions <span id="group-count" class="badge">0 groups</span></h2></div>
+      <div class="button-row"><button id="reload" disabled>Reload from device</button><button id="save" class="primary" disabled>Save to device</button></div>
+    </div>
     <div class="workspace">
-      <section class="panel" aria-label="Connection controls">
-        <div class="panel-header"><span>Connection</span><div><button id="connect" class="primary">Connect</button><button id="disconnect" disabled>Disconnect</button></div></div>
-        <div class="panel-body" style="padding: 16px;">
-          <p id="device-info">No device selected</p>
-        </div>
-      </section>
-      <section class="panel" aria-label="MIDI messages">
-        <div class="panel-header"><span>Received MIDI</span></div>
-        <pre id="received" tabindex="0" aria-label="MIDI output"></pre>
-        <form id="send-form">
-          <label>Hex input<input id="hexInput" type="text" autocomplete="off" spellcheck="false"></label>
-          <button id="send" class="primary" disabled>Send</button>
-        </form>
-      </section>
+      <aside class="sidebar">
+        <section class="help-card"><span class="step">01 / BUILD</span><h3>Make it yours</h3><p>The group button cycles 12 normal groups. Four extended groups follow; the two hold buttons select extended groups 1 and 2.</p><p id="group-limit" class="small">12 normal groups + 4 extended groups.</p></section>
+        <section class="help-card"><span class="step">02 / SEQUENCE</span><h3>One press, one action</h3><p>Each group has <strong>8 fixed slots</strong>. Choose a preset change or a destination group and slot.</p><p class="small">Navigation follows one hop. If its destination is another navigation entry, no MIDI message is sent. Advancing wraps after slot 8.</p></section>
+        <section class="help-card"><span class="step">03 / SYNC</span><h3>Names from your GP-5</h3><p id="names-status" role="status">Preset indexes 0-99. Names are requested when connected.</p><button id="refresh-names" disabled>Refresh preset names</button><p class="small">Saving changes the controller's action list, not the GP-5's sounds.</p></section>
+      </aside>
+      <section id="groups" class="groups" aria-label="Preset groups"><div class="empty"><h3>Your next set starts here.</h3><p>Connect your GP5 Link to load its preset groups.</p></div></section>
     </div>
   </main>
-  <footer><span>Valeton GP5 Link</span><span id="offline-status" role="status">Offline cache pending</span></footer>
+  <footer><span>GP5 Link / BLE preset manager</span><span id="offline-status" role="status">Offline cache pending</span></footer>
   <script>
+    'use strict';
     const element = (id) => document.getElementById(id);
-    const supported = 'bluetooth' in navigator && navigator.bluetooth && navigator.bluetooth.requestDevice;
-    // BLE MIDI service and characteristic UUIDs used by the device (128‑bit, lowercase)
-    const MIDI_SERVICE_UUID = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
-    const MIDI_CHAR_UUID = '7772e5db-3868-4112-a1a9-f2669d106bf3';
-    let device = null;
-    let server = null;
-    let midiService = null;
-    let midiChar = null;
-    let connected = false;
+    const MIDI_SERVICE = '03b80e5a-ede8-4b33-a751-6ce34ec4c700';
+    const MIDI_CHARACTERISTIC = '7772e5db-3868-4112-a1a9-f2669d106bf3';
+    const CONFIGURATION_SERVICE = '9c7b1000-6e4d-4f42-9a31-2d5e8b0c7f60';
+    const CONFIGURATION_CHARACTERISTIC = '9c7b1001-6e4d-4f42-9a31-2d5e8b0c7f60';
+    const START_SYNC = [0x80, 0x80, 0xf0, 0, 0x0e, 0, 1, 0, 0, 0, 2, 1, 2, 4, 0, 0xf7];
+    const REQUEST_NAMES = [0x80, 0x80, 0xf0, 3, 5, 0, 1, 0, 0, 0, 2, 1, 2, 2, 4, 0xf7];
+    const supported = window.isSecureContext && typeof navigator.bluetooth?.requestDevice === 'function';
+    const actionLabels = ['Navigate', 'Preset change'];
+    let device = null, characteristic = null, configurationCharacteristic = null, busy = false, loaded = false, dirty = false;
+    let groups = [], normalCount = 12, names = Array(100).fill('');
+    let token = 0, pending = null, namePending = null, session = 0;
 
+    function notify(text, error = false) {
+      element('message').textContent = text;
+      element('message').classList.toggle('warning', error);
+    }
+    function connected() { return Boolean(characteristic && configurationCharacteristic && device?.gatt.connected); }
     function updateControls() {
-      element('connect').disabled = !supported || connected;
-      element('disconnect').disabled = !connected;
-      element('send').disabled = !connected;
-      element('hexInput').disabled = !connected;
-      element('status').textContent = connected ? 'Connected' : 'Disconnected';
-      element('status').classList.toggle('connected', connected);
+      const online = connected();
+      element('connect').disabled = !supported || online || busy;
+      element('disconnect').disabled = !online;
+      element('reload').disabled = !online || busy;
+      element('save').disabled = !online || busy || !loaded || !dirty;
+      element('refresh-names').disabled = !online || busy;
+      element('status').textContent = online ? (busy ? 'Syncing' : 'Connected') : 'Disconnected';
+      element('status').classList.toggle('connected', online);
+      element('group-count').textContent = `${groups.length} groups${dirty ? ' / unsaved' : ''}`;
+      element('groups').querySelectorAll('button, select').forEach((control) => { control.disabled = busy; });
     }
-
-    function append(text) {
-      const output = element('received');
-      output.textContent = (output.textContent + text).slice(-100000);
-      output.scrollTop = output.scrollHeight;
-    }
-
-    async function connect() {
-      if (!supported) {
-        element('message').textContent = 'Web Bluetooth not supported in this browser.';
-        return;
-      }
-      try {
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [MIDI_SERVICE_UUID] }],
-          optionalServices: [MIDI_SERVICE_UUID]
+    function markDirty() { dirty = true; updateControls(); }
+    function presetLabel(index) { return names[index] ? `${index} - ${names[index]}` : String(index); }
+    function render() {
+      const root = element('groups');
+      root.replaceChildren();
+      groups.forEach((actions, groupIndex) => {
+        const card = document.createElement('article');
+        card.className = 'group-card';
+        const hold = groupIndex >= normalCount;
+        const title = hold ? `Extended group ${groupIndex - normalCount + 1}` : `Group ${groupIndex + 1}`;
+        const heading = document.createElement('div');
+        heading.className = 'group-heading';
+        const headingText = document.createElement('div');
+        const label = document.createElement('p');
+        label.className = 'eyebrow';
+        label.textContent = hold ? 'EXTENDED GROUP' : 'NORMAL GROUP';
+        const name = document.createElement('h3');
+        name.textContent = title;
+        headingText.append(label, name);
+        const count = document.createElement('span');
+        count.className = 'badge';
+        count.textContent = `${actions.length} slots`;
+        heading.append(headingText, count);
+        card.append(heading);
+        actions.forEach((action, slot) => {
+          const row = document.createElement('div');
+          row.className = 'action-row';
+          const number = document.createElement('span');
+          number.className = 'action-number';
+          number.textContent = String(slot + 1).padStart(2, '0');
+          const typeLabel = document.createElement('label');
+          typeLabel.textContent = 'Action';
+          const type = document.createElement('select');
+          type.setAttribute('aria-label', `${title}, action ${slot + 1}, type`);
+          actionLabels.forEach((text, value) => {
+            const option = new Option(text, value);
+            type.add(option);
+          });
+          type.value = action.action;
+          type.onchange = () => { action.action = Number(type.value); action.arg = 0; markDirty(); render(); };
+          typeLabel.append(type);
+          const targetLabel = document.createElement('label');
+          targetLabel.textContent = action.action === 1 ? 'GP-5 preset' : 'Destination';
+          if (action.action === 1) {
+            const select = document.createElement('select');
+            select.setAttribute('aria-label', `${title}, action ${slot + 1}, preset`);
+            for (let index = 0; index < 100; index++) select.add(new Option(presetLabel(index), index));
+            select.value = action.arg;
+            select.onchange = () => { action.arg = Number(select.value); markDirty(); };
+            targetLabel.append(select);
+          } else {
+            const group = document.createElement('select');
+            group.setAttribute('aria-label', `${title}, slot ${slot + 1}, destination group`);
+            for (let index = 0; index < 16; index++)
+              group.add(new Option(index < 12 ? `Group ${index + 1}` : `Extended group ${index - 11}`, index));
+            group.value = action.arg & 15;
+            const destination = document.createElement('select');
+            destination.setAttribute('aria-label', `${title}, slot ${slot + 1}, destination slot`);
+            for (let index = 0; index < 8; index++) destination.add(new Option(`Slot ${index + 1}`, index));
+            destination.value = action.arg >> 4;
+            const change = () => { action.arg = (Number(destination.value) << 4) | Number(group.value); markDirty(); };
+            group.onchange = destination.onchange = change;
+            targetLabel.append(group, destination);
+          }
+          row.append(number, typeLabel, targetLabel);
+          card.append(row);
         });
-        device.addEventListener('gattserverdisconnected', onDisconnected);
-        element('device-info').textContent = `Device: ${device.name || 'Unnamed'} (ID: ${device.id})`;
-        server = await device.gatt.connect();
-        midiService = await server.getPrimaryService(MIDI_SERVICE_UUID);
-        midiChar = await midiService.getCharacteristic(MIDI_CHAR_UUID);
-        await midiChar.startNotifications();
-        midiChar.addEventListener('characteristicvaluechanged', handleMIDI);
-        connected = true;
-        append('[Connected]');
-        updateControls();
-      } catch (error) {
-        element('message').textContent = `Connection failed: ${error.message}`;
-      }
-    }
-
-    function onDisconnected() {
-      connected = false;
-      append('[Disconnected]');
+        root.append(card);
+      });
       updateControls();
     }
-
-    function disconnect() {
-      if (device && device.gatt.connected) {
-        device.gatt.disconnect();
-      }
-    }
-
-    function handleMIDI(event) {
-      const value = event.target.value;
-      const bytes = new Uint8Array(value.buffer);
-      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      append(`\n${hex}`);
-    }
-
-    function parseHexString(str) {
-      const cleaned = str.replace(/\s+/g, '');
-      if (cleaned.length % 2 !== 0) return null;
-      const bytes = [];
-      for (let i = 0; i < cleaned.length; i += 2) {
-        const byte = parseInt(cleaned.substr(i, 2), 16);
-        if (isNaN(byte)) return null;
-        bytes.push(byte);
-      }
-      return new Uint8Array(bytes);
-    }
-
-    element('connect').addEventListener('click', connect);
-    element('disconnect').addEventListener('click', disconnect);
-    element('send-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (!connected || !midiChar) return;
-      const hex = element('hexInput').value.trim();
-      const data = parseHexString(hex);
-      if (!data) {
-        element('message').textContent = 'Invalid hex input.';
-        return;
-      }
-      try {
-        await midiChar.writeValue(data);
-        append(`\n[TX] ${hex}`);
-        element('hexInput').value = '';
-      } catch (err) {
-        element('message').textContent = `Send failed: ${err.message}`;
-      }
-    });
-
-    if (supported) {
-      navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
-        // Optional: handle advertising events if needed
+    function validateGroups(list) {
+      if (!Array.isArray(list) || list.length !== 16)
+        throw new Error('Invalid group count.');
+      list.forEach((actions) => {
+        if (!Array.isArray(actions) || actions.length !== 8)
+          throw new Error('Every group needs exactly 8 slots.');
+        actions.forEach(({ action, arg }) => {
+          if (!Number.isInteger(action) || action < 0 || action > 1 || !Number.isInteger(arg) ||
+              arg < 0 || arg > (action === 1 ? 99 : 127))
+            throw new Error('Invalid action, preset index, or navigation destination.');
+        });
       });
-    } else {
+    }
+    function apiPacket(command, requestToken, payload) {
+      return new Uint8Array([1, command, requestToken, ...payload]);
+    }
+    async function write(bytes) {
+      if (!connected()) throw new Error('Bluetooth connection lost.');
+      if (characteristic.properties.write) await characteristic.writeValueWithResponse(new Uint8Array(bytes));
+      else await characteristic.writeValueWithoutResponse(new Uint8Array(bytes));
+    }
+    function request(command, payload, requestToken) {
+      if (pending) return Promise.reject(new Error('Another device request is still pending.'));
+      return new Promise((resolve, reject) => {
+        let written = false, response = null;
+        const timer = setTimeout(() => {
+          if (pending?.timer !== timer) return;
+          pending = null;
+          reject(new Error('Device response timed out. Check that the preset-management firmware is installed.'));
+        }, 4000);
+        pending = { command, token: requestToken, resolve(value) {
+          response = value;
+          if (written) resolve(value);
+        }, reject, timer };
+        // Notifications may arrive before the GATT write completes.
+        configurationCharacteristic.writeValueWithResponse(apiPacket(command, requestToken, payload)).then(() => {
+          written = true;
+          if (response !== null) resolve(response);
+        }).catch((error) => {
+          if (pending?.timer === timer) { clearTimeout(timer); pending = null; }
+          reject(error);
+        });
+      });
+    }
+    function nextToken() { token = token % 255 + 1; return token; }
+    function parseNamePacket(bytes) {
+      if (bytes.length !== 212 || bytes[2] !== 0xf0 || bytes[211] !== 0xf7 || bytes[5] !== 1 || bytes[6] !== 5)
+        return null;
+      if (bytes[7] > 15 || bytes[8] > 15) throw new Error('Invalid GP-5 name-list index.');
+      const first = (bytes[7] * 16 + bytes[8]) * 5;
+      if (first > 95) throw new Error('GP-5 name-list index is outside 0-99.');
+      const result = [];
+      for (let slot = 0; slot < 5; slot++) {
+        let text = '';
+        for (let offset = 0; offset < 20; offset += 2) {
+          const high = bytes[23 + slot * 40 + offset], low = bytes[24 + slot * 40 + offset];
+          if (high > 15 || low > 15) throw new Error('Invalid GP-5 name encoding.');
+          text += String.fromCharCode(high * 16 + low);
+        }
+        result.push(text.replace(/\0.*$/, '').trim());
+      }
+      return { first, names: result };
+    }
+    function handleConfiguration(event) {
+      const view = event.target.value;
+      const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+      if (bytes.length >= 3 && pending && bytes[2] === pending.token && bytes[1] === pending.command) {
+        const current = pending; pending = null; clearTimeout(current.timer);
+        if (bytes[0] !== 1 || bytes.length < 4) current.reject(new Error('Invalid configuration response.'));
+        else if (bytes[3] !== 0) current.reject(new Error(['', 'Firmware rejected the request.', 'Invalid preset configuration.', 'Flash save failed.'][bytes[3]] || 'Unknown firmware error.'));
+        else if (bytes.length !== (current.command === 1 ? 132 : 4)) current.reject(new Error('Invalid configuration response length.'));
+        else current.resolve(Array.from(bytes.slice(4)));
+      }
+    }
+    function handleMIDI(event) {
+      const view = event.target.value;
+      const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+      if (!namePending) return;
+      try {
+        const packet = parseNamePacket(bytes);
+        if (packet) {
+          packet.names.forEach((name, offset) => { namePending.names[packet.first + offset] = name; namePending.received.add(packet.first + offset); });
+          element('names-status').textContent = `Fetching names: ${namePending.received.size} / 100`;
+          if (namePending.received.size === 100) namePending.finish();
+        } else if (bytes.length === 16 && bytes[5] === 1 && bytes[6] === 5 && bytes[7] === 1 && bytes[8] === 4 && bytes.at(-1) === 0xf7) {
+          namePending.fail(new Error('GP-5 returned an incomplete name list.'));
+        }
+      } catch (error) { namePending?.fail(error); }
+    }
+    async function fetchNames() {
+      const currentSession = session;
+      names = Array(100).fill('');
+      element('names-status').textContent = 'Requesting preset names from the GP-5...';
+      render();
+      try {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => namePending?.fail(new Error('GP-5 name request timed out.')), 12000);
+          const current = {
+            names: Array(100).fill(''), received: new Set(),
+            finish() { clearTimeout(timer); names = current.names; namePending = null; resolve(); },
+            fail(error) { clearTimeout(timer); namePending = null; reject(error); }
+          };
+          namePending = current;
+          (async () => {
+            await write(START_SYNC);
+            await new Promise((done) => setTimeout(done, 250));
+            if (namePending !== current) return;
+            await write(REQUEST_NAMES);
+          })().catch((error) => { if (namePending === current) current.fail(error); });
+        });
+        element('names-status').textContent = 'Preset names loaded / indexes 0-99.';
+      } catch (error) {
+        if (session !== currentSession) return;
+        element('names-status').textContent = 'Names unavailable. Showing preset indexes 0-99 only.';
+        notify(`Preset names unavailable: ${error.message} Using indexes only.`, true);
+      }
+      render();
+    }
+    async function loadGroups() {
+      const requestToken = nextToken();
+      const map = await request(1, [], requestToken);
+      const list = Array.from({ length: 16 }, (_, group) => Array.from({ length: 8 }, (_, slot) => {
+        const entry = map[group * 8 + slot];
+        return { action: entry >> 7, arg: entry & 127 };
+      }));
+      validateGroups(list);
+      groups = list; loaded = true; dirty = false;
+      render();
+      notify('Preset actions loaded from your controller.');
+    }
+    async function operation(work) {
+      if (busy) return;
+      busy = true; updateControls();
+      const currentSession = session;
+      try { await work(); }
+      catch (error) { if (session === currentSession) notify(error.message, true); }
+      finally { if (session === currentSession) { busy = false; updateControls(); } }
+    }
+    function onDisconnected() {
+      session++;
+      characteristic?.removeEventListener('characteristicvaluechanged', handleMIDI);
+      configurationCharacteristic?.removeEventListener('characteristicvaluechanged', handleConfiguration);
+      characteristic = configurationCharacteristic = null; busy = false;
+      if (pending) { clearTimeout(pending.timer); pending.reject(new Error('Bluetooth disconnected.')); pending = null; }
+      namePending?.fail(new Error('Bluetooth disconnected.'));
+      updateControls();
+      notify('Disconnected. Unsaved edits stay on this page; reconnecting reloads the controller.', true);
+    }
+    async function connect() {
+      if (dirty && !window.confirm('Connecting will replace your unsaved edits with the controller configuration. Continue?')) return;
+      await operation(async () => {
+        try {
+          device?.removeEventListener('gattserverdisconnected', onDisconnected);
+          device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'GP5 Proxy' }], optionalServices: [MIDI_SERVICE, CONFIGURATION_SERVICE] });
+          device.addEventListener('gattserverdisconnected', onDisconnected);
+          const server = await device.gatt.connect();
+          const service = await server.getPrimaryService(MIDI_SERVICE);
+          characteristic = await service.getCharacteristic(MIDI_CHARACTERISTIC);
+          characteristic.addEventListener('characteristicvaluechanged', handleMIDI);
+          await characteristic.startNotifications();
+          const configurationService = await server.getPrimaryService(CONFIGURATION_SERVICE);
+          configurationCharacteristic = await configurationService.getCharacteristic(CONFIGURATION_CHARACTERISTIC);
+          configurationCharacteristic.addEventListener('characteristicvaluechanged', handleConfiguration);
+          await configurationCharacteristic.startNotifications();
+        } catch (error) {
+          if (device?.gatt.connected) device.gatt.disconnect();
+          characteristic?.removeEventListener('characteristicvaluechanged', handleMIDI);
+          configurationCharacteristic?.removeEventListener('characteristicvaluechanged', handleConfiguration);
+          characteristic = configurationCharacteristic = null;
+          throw new Error(`Connection failed: ${error.message}`);
+        }
+        loaded = false;
+        const connectionSession = session;
+        element('device-info').textContent = `${device.name || 'GP5 Proxy'} / configuration + MIDI services`;
+        updateControls();
+        // A missing/older management API must not prevent requesting GP-5 names.
+        try { await loadGroups(); } catch (error) { notify(`Cannot load preset actions: ${error.message}`, true); }
+        if (session !== connectionSession || !connected()) return;
+        await fetchNames();
+      });
+    }
+    element('connect').onclick = connect;
+    element('disconnect').onclick = () => device?.gatt.disconnect();
+    element('reload').onclick = () => {
+      if (dirty && !window.confirm('Discard unsaved changes and reload from the controller?')) return;
+      operation(loadGroups);
+    };
+    element('refresh-names').onclick = () => operation(fetchNames);
+    element('save').onclick = () => operation(async () => {
+      validateGroups(groups);
+      const requestToken = nextToken();
+      notify('Saving preset actions. Keep the controller connected...');
+      await request(4, groups.flatMap(actions => actions.map(({ action, arg }) => (action << 7) | arg)), requestToken);
+      dirty = false;
+      notify('Saved to controller flash. Your groups are ready to play.');
+    });
+    window.addEventListener('beforeunload', (event) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+    if (!supported) {
       element('compatibility').hidden = false;
-      element('compatibility').textContent = !window.isSecureContext
-        ? 'Web Bluetooth requires HTTPS or localhost.'
-        : 'Web Bluetooth is unavailable. Open this page in a browser that supports Web Bluetooth.';
+      element('compatibility').textContent = !window.isSecureContext ? 'Bluetooth requires HTTPS or localhost.' : 'Use Chrome or Edge with Web Bluetooth support (desktop or Android). Safari and Firefox are not supported.';
     }
     updateControls();
 
-    // PWA install prompt handling
     let installPrompt = null;
-    window.addEventListener('beforeinstallprompt', (event) => {
-      event.preventDefault();
-      installPrompt = event;
-      element('install').hidden = false;
-    });
-    element('install').addEventListener('click', async () => {
+    window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); installPrompt = event; element('install').hidden = false; });
+    element('install').onclick = async () => {
       if (!installPrompt) return;
-      const prompt = installPrompt;
-      installPrompt = null;
-      element('install').hidden = true;
-      await prompt.prompt();
-      await prompt.userChoice;
-    });
-    window.addEventListener('appinstalled', () => {
-      installPrompt = null;
-      element('install').hidden = true;
-    });
-
-    // Service worker registration for offline support
+      const prompt = installPrompt; installPrompt = null; element('install').hidden = true;
+      try { await prompt.prompt(); await prompt.userChoice; } catch (error) { notify(`Installation failed: ${error.message}`, true); }
+    };
+    window.addEventListener('appinstalled', () => { installPrompt = null; element('install').hidden = true; });
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {
         element('offline-status').textContent = 'Ready for offline use';
-      }).catch((error) => {
-        element('offline-status').textContent = 'Offline cache unavailable';
-        element('message').textContent = `Service worker registration failed: ${error.message}`;
-      });
-    } else {
-      element('offline-status').textContent = 'Offline cache unavailable';
-    }
+      }).catch((error) => { element('offline-status').textContent = 'Offline cache unavailable'; notify(`Offline setup failed: ${error.message}`, true); });
+    } else element('offline-status').textContent = 'Offline cache unavailable';
   </script>
 </body>
 </html>

@@ -16,6 +16,7 @@ $arguments = @(
     (Join-Path $PSScriptRoot 'ble_proxy\proxy.Tests.cpp'),
     (Join-Path $root 'src\BleApiService.cpp'),
     (Join-Path $root 'src\BleClient.cpp'),
+    (Join-Path $root 'src\PresetManager.cpp'),
     "/Fo$build\",
     "/Fe$build\proxy-tests.exe"
 )
@@ -36,7 +37,7 @@ try
 }
 finally
 {
-    foreach ($name in @('proxy.Tests.obj', 'BleApiService.obj', 'BleClient.obj', 'proxy-tests.exe'))
+    foreach ($name in @('proxy.Tests.obj', 'BleApiService.obj', 'BleClient.obj', 'PresetManager.obj', 'proxy-tests.exe'))
     {
         $file = Join-Path $build $name
         if (Test-Path -LiteralPath $file)

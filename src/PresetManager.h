@@ -3,10 +3,13 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <mutex>
+#include "BleEndpoint.h"
 
-constexpr uint8_t NUM_GROUPS = 2;
-constexpr uint8_t NUM_EXT_GROUPS = 2;
-constexpr uint8_t NUM_PRESETS_PER_GROUP = 10;
+constexpr uint8_t MAX_NORMAL_GROUPS = 12;
+constexpr uint8_t NUM_EXT_GROUPS = 4;
+constexpr uint8_t MAX_GROUPS = MAX_NORMAL_GROUPS + NUM_EXT_GROUPS;
+constexpr uint8_t NUM_PRESETS_PER_GROUP = 8;
 
 /**
  * Represents a BLE message with data and length.
@@ -17,67 +20,64 @@ struct BLEMessage
     size_t length;
 };
 
-struct PresetAction
+/**
+ * Defines the possible actions that can be performed on a preset.
+ */
+enum PresetAction : uint8_t
 {
-    uint16_t action;
-    uint16_t arg;
+    PRESET_ACTION_NAV = 0b00000000,
+    PRESET_ACTION_SET = 0b10000000,
 };
 
-#define PRESET_ACTION_NONE 0
-#define PRESET_ACTION_SET 1
-#define PRESET_ACTION_RESET 2
-#define PRESET_ACTION_FIRST 3
+/**
+ * Represents a preset action with an action type and an argument.
+ */
+typedef uint8_t PresetMapEntry;
 
-#define PRESET_RYTHM 0
-#define PRESET_SOLO 1
-#define PRESET_CLEAN 2
-#define PRESET_DROP_RYTHM 3
-#define PRESET_DROP_SOLO 4
-#define PRESET_SOUTH_OF_INTRO 11
-#define PRESET_RYTHM_ABYSS 12
+/**
+ * Represents the configuration of presets and groups.
+ */
+struct Configuration
+{
+    PresetMapEntry presetMap[MAX_GROUPS][NUM_PRESETS_PER_GROUP];
+};
+
 
 /**
  * Manages presets and groups for the BLE device.
+ * Provides functionality to navigate, apply, and edit preset configurations.
  */
 class PresetManager
 {
 public:
-    using PresetCallback = BLEMessage (PresetManager::*)(void);
-
-public:
     PresetManager();
+ 
+    bool setup();
+    bool handleApi(const uint8_t *data, size_t length, BleEndpoint &reply);
 
-    BLEMessage reset();
     BLEMessage nextPreset();
     BLEMessage nextGroup();
 
-    BLEMessage extGroup1();
-    BLEMessage extGroup2();
+    BLEMessage extGroup1() { return extGroup(0); }
+    BLEMessage extGroup2() { return extGroup(1); }
+    BLEMessage extGroup3() { return extGroup(2); }
+    BLEMessage extGroup4() { return extGroup(3); }
 
 protected:
-    BLEMessage setRythm();
-    BLEMessage setRythmAbyss();
-    BLEMessage setSolo();
-    BLEMessage setClean();
-    BLEMessage setDropRythm();
-    BLEMessage setDropSolo();
-    BLEMessage setSouthOfIntro();
-
+    BLEMessage extGroup(uint16_t index);
     BLEMessage setPreset(uint16_t arg);
-    BLEMessage firstPreset();
-
     BLEMessage apply();
+
+private:
+    bool valid(const Configuration &value) const;
+    bool persist(const Configuration &value);
 
 private:
     uint8_t currentPresetIndex;
     uint8_t currentGroupIndex;
 
-    PresetAction presets[NUM_GROUPS + NUM_EXT_GROUPS][NUM_PRESETS_PER_GROUP] = {
-        {{PRESET_ACTION_SET, PRESET_RYTHM}, {PRESET_ACTION_SET, PRESET_SOLO}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
-        {{PRESET_ACTION_SET, PRESET_DROP_RYTHM}, {PRESET_ACTION_SET, PRESET_DROP_SOLO}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
-        {{PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_CLEAN}, {PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_SOLO}, {PRESET_ACTION_SET, PRESET_RYTHM_ABYSS}, {PRESET_ACTION_SET, PRESET_CLEAN}, {PRESET_ACTION_RESET, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
-        {{PRESET_ACTION_SET, PRESET_SOUTH_OF_INTRO}, {PRESET_ACTION_RESET, 0}, {PRESET_ACTION_FIRST, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}, {PRESET_ACTION_NONE, 0}},
-    };
+    Configuration configuration{};
+    std::mutex mutex;
 };
 
 #endif // __PRESET_MANAGER_H__

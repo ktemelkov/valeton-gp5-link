@@ -5,6 +5,12 @@
 #include <string>
 
 constexpr uint16_t BLE_HS_CONN_HANDLE_NONE = UINT16_MAX;
+constexpr int BLE_HS_IO_NO_INPUT_OUTPUT = 0, ESP_PWR_LVL_N0 = 0;
+class NimBLEUUID
+{
+public:
+    explicit NimBLEUUID(uint16_t) {}
+};
 namespace NIMBLE_PROPERTY
 {
     constexpr uint32_t READ = 1, WRITE = 2, WRITE_NR = 4, NOTIFY = 8;
@@ -24,6 +30,8 @@ public:
     NimBLEAddress getIdAddress() const { return {}; }
     bool isEncrypted() const { return true; }
     bool isAuthenticated() const { return true; }
+    uint16_t getConnInterval() const { return 24; }
+    uint16_t getConnLatency() const { return 0; }
 };
 
 class NimBLEClient;
@@ -62,6 +70,8 @@ class NimBLECharacteristicCallbacks
 public:
     virtual ~NimBLECharacteristicCallbacks() = default;
     virtual void onWrite(NimBLECharacteristic*, NimBLEConnInfo&) {}
+    virtual void onSubscribe(NimBLECharacteristic*, NimBLEConnInfo&, uint16_t) {}
+    virtual void onStatus(NimBLECharacteristic*, NimBLEConnInfo&, int) {}
 };
 class NimBLEDescriptorCallbacks {};
 
@@ -136,6 +146,8 @@ public:
 class NimBLECharacteristic
 {
 public:
+    uint16_t attribute = 42;
+    uint16_t getHandle() const { return attribute; }
     NimBLECharacteristicCallbacks* callbacks = nullptr;
     std::vector<uint8_t> value;
     std::vector<uint8_t> notified;
@@ -175,6 +187,7 @@ public:
     int starts = 0;
     bool setName(const char*) { return true; }
     bool addServiceUUID(const char*) { return true; }
+    bool addServiceUUID(const NimBLEUUID&) { return true; }
     void enableScanResponse(bool) {}
     bool start() { ++starts; return true; }
 };
@@ -182,8 +195,15 @@ public:
 class NimBLEServer
 {
 public:
+    int parameterUpdates = 0;
+    void updateConnParams(uint16_t, uint16_t min, uint16_t max, uint16_t latency, uint16_t timeout)
+    {
+        assert(min == 12 && max == 24 && latency == 0 && timeout == 200);
+        ++parameterUpdates;
+    }
     NimBLEServerCallbacks* callbacks = nullptr;
     NimBLEService service;
+    NimBLEService configurationService;
     NimBLEAdvertising advertising;
     uint16_t mtu = 27;
     bool started = false;
@@ -192,7 +212,15 @@ public:
         assert(!owned);
         callbacks = handler;
     }
-    NimBLEService* createService(const char*) { return &service; }
+    NimBLEService* createService(const char *uuid)
+    {
+        if (std::string(uuid) == "9c7b1000-6e4d-4f42-9a31-2d5e8b0c7f60")
+        {
+            configurationService.characteristic.attribute = 43;
+            return &configurationService;
+        }
+        return &service;
+    }
     bool start() { started = true; return true; }
     NimBLEAdvertising* getAdvertising() { return &advertising; }
     uint16_t getPeerMTU(uint16_t) const { return mtu; }
@@ -204,6 +232,9 @@ public:
     static inline NimBLEClient client;
     static inline NimBLEServer server;
     static void init(const char*) {}
+    static void setSecurityIOCap(int) {}
+    static void setSecurityAuth(bool, bool, bool) {}
+    static void setPower(int) {}
     static void deleteAllBonds() {}
     static NimBLEClient* getDisconnectedClient() { return &client; }
     static NimBLEClient* createClient() { return &client; }

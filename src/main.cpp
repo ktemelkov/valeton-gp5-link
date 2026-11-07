@@ -33,14 +33,16 @@ extern "C" void app_main()
 
   PowerManager powerManager;
   PresetManager presetManager;
+  presetManager.setup();
 
   BleApiService bleApiService;
   bleClient.setup(&bleApiService);
-  bleApiService.setup(&bleClient);
+  bleApiService.setup(&bleClient, &presetManager);
 
   while (true)
   {
     vTaskDelay(pdMS_TO_TICKS(20));
+    bleApiService.processNotifications();
 
     if (powerManager.shouldSleep())
     {
