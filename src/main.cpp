@@ -13,7 +13,6 @@
 #include "PresetManager.h"
 #include "BleApiService.h"
 
-
 #define BUTTON1_PIN GPIO_NUM_5
 #define BUTTON2_PIN GPIO_NUM_4
 
@@ -76,24 +75,46 @@ extern "C" void app_main()
     }
 
     auto event1 = buttons.getEvent(BUTTON1_PIN);
+    auto state1 = buttons.getState(BUTTON1_PIN);
     auto event2 = buttons.getEvent(BUTTON2_PIN);
+    auto state2 = buttons.getState(BUTTON2_PIN);
 
-    if (event1 == PRESSED)
+    if (event1 == RELEASED)
     {
       led.toggle();
       powerManager.triggerWatchdog();
 
-      BLEMessage msg = presetManager.nextPreset();
-      bleClient.Send(msg.data, msg.length);
+      if (state2 != RELEASED_STATE)
+      {
+        buttons.setState(BUTTON2_PIN, LONG_PRESSED_STATE);
+
+        BLEMessage msg = presetManager.extGroup3();
+        bleClient.Send(msg.data, msg.length);
+      }
+      else
+      {
+        BLEMessage msg = presetManager.nextPreset();
+        bleClient.Send(msg.data, msg.length);
+      }
     }
 
-    if (event2 == PRESSED)
+    if (event2 == RELEASED)
     {
       led.toggle();
       powerManager.triggerWatchdog();
 
-      BLEMessage msg = presetManager.nextGroup();
-      bleClient.Send(msg.data, msg.length);
+      if (state1 != RELEASED_STATE)
+      {
+        buttons.setState(BUTTON1_PIN, LONG_PRESSED_STATE);
+
+        BLEMessage msg = presetManager.extGroup4();
+        bleClient.Send(msg.data, msg.length);
+      }
+      else
+      {
+        BLEMessage msg = presetManager.nextGroup();
+        bleClient.Send(msg.data, msg.length);
+      }
     }
 
     if (event1 == HOLD)

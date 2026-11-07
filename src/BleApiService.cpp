@@ -277,7 +277,7 @@ bool BleApiService::enqueue(const uint8_t *data, size_t length, bool api)
     if (pServer == nullptr || notification.connectionHandle == BLE_HS_CONN_HANDLE_NONE || !enabled)
     {
         ESP_LOGW(TAG, "Cannot forward notification: no connected/subscribed BLE API client.");
-        return false;
+        return true;
     }
 
     const uint16_t mtu = pServer->getPeerMTU(notification.connectionHandle);

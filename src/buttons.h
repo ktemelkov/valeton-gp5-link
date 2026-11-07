@@ -19,8 +19,10 @@ enum ButtonEvent
 
 enum ButtonState
 {
+    UNDEFINED_STATE = 0xff,
     RELEASED_STATE = 0,
-    PRESSED_STATE = 1
+    PRESSED_STATE = 1,
+    LONG_PRESSED_STATE = 2
 };
 
 /**
@@ -29,14 +31,16 @@ enum ButtonState
 class Buttons
 {
 private:
-    Buttons() = default;
+    Buttons();
 
 public:
     static Buttons& instance();
 
     void begin(const uint8_t* buttonPins, uint16_t buttonCount);
 
-    ButtonEvent getEvent(uint8_t buttonPin, bool clearEvent = true);
+    ButtonEvent getEvent(uint8_t buttonPin);
+    ButtonState getState(uint8_t buttonPin);
+    void setState(uint8_t buttonPin, ButtonState state);
 
     const uint8_t* getPins() const { return _buttonPin; }
     uint16_t getButtonCount() const { return _buttonCount; }
@@ -49,10 +53,10 @@ private:
     uint8_t indexOfPin(uint8_t buttonPin) const;
 
 private:
-    uint8_t _buttonPin[MAX_BUTTONS] = {0};
-    volatile uint8_t _stableLevel[MAX_BUTTONS] = {1};
-    volatile uint32_t _lastIsr[MAX_BUTTONS] = {0};
-    volatile ButtonEvent _btnEvent[MAX_BUTTONS] = {NO_CHANGE};
+    uint8_t _buttonPin[MAX_BUTTONS];
+    volatile uint8_t _stableLevel[MAX_BUTTONS];
+    volatile uint32_t _lastIsr[MAX_BUTTONS];
+    volatile ButtonState _btnState[MAX_BUTTONS];
 
     uint16_t _buttonCount = 0;
 };
