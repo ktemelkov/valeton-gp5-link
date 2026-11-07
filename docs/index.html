@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#17694f">
+  <meta name="theme-color" content="#18231e">
   <meta name="description" content="Manage guitar-switch preset groups over a binary BLE configuration service.">
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./icon-192.png">
@@ -73,6 +73,8 @@
       const expanded = new Set(Array.from(root.children).filter(card => card.open).map(card => Number(card.dataset.group)));
       root.replaceChildren();
       groups.forEach((actions, groupIndex) => {
+        const end = actions.findIndex(action => action.action === 0);
+        const visibleActions = end < 0 ? actions : actions.slice(0, end + 1);
         const card = document.createElement('details');
         card.className = 'group-card';
         card.dataset.group = groupIndex;
@@ -87,10 +89,10 @@
         headingText.append(name);
         const count = document.createElement('span');
         count.className = 'badge';
-        count.textContent = `${actions.length} slots`;
+        count.textContent = `${visibleActions.length} ${visibleActions.length === 1 ? 'slot' : 'slots'}`;
         heading.append(headingText, count);
         card.append(heading);
-        actions.forEach((action, slot) => {
+        visibleActions.forEach((action, slot) => {
           const row = document.createElement('div');
           row.className = 'action-row';
           const number = document.createElement('span');
@@ -128,7 +130,7 @@
             destination.setAttribute('aria-label', `${title}, slot ${slot + 1}, destination slot`);
             for (let index = 0; index < 8; index++) destination.add(new Option(`Slot ${index + 1}`, index));
             destination.value = action.arg >> 4;
-            const change = () => { action.arg = (Number(destination.value) << 4) | Number(group.value); markDirty(); };
+            const change = () => { action.arg = (Number(destination.value) << 4) | Number(group.value); markDirty(); render(); };
             group.onchange = destination.onchange = change;
             targets.append(group, destination);
           }

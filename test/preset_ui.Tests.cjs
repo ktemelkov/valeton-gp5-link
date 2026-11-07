@@ -189,6 +189,79 @@ test('compact groups keep named controls and paired navigation targets editable'
   assert.equal(app.run('groups[12][0].arg'), 99);
 });
 
+test('action lists include only slots through the first Navigate regardless of destination', () => {
+  const app = workspace();
+  app.run(`groups = Array.from({length:16}, () => Array.from({length:8}, () => ({action:1,arg:0})));
+    groups[0][0] = {action:0,arg:0};
+    groups[1][2] = {action:0,arg:0};
+    groups[1][5] = {action:0,arg:0};
+    groups[2][7] = {action:0,arg:0};
+    groups[3][0] = {action:0,arg:1};
+    groups[3][1] = {action:0,arg:16};
+    groups[5][3] = {action:0,arg:16};
+    groups[12][3] = {action:0,arg:127};
+    render()`);
+  const cards = app.elements.get('groups').children;
+  assert.equal(cards[0].children.length - 1, 1);
+  assert.equal(cards[0].children[0].children[1].textContent, '1 slot');
+  assert.equal(cards[1].children.length - 1, 3);
+  assert.equal(cards[1].children[0].children[1].textContent, '3 slots');
+  assert.equal(cards[1].children[3].children[0].textContent, '03');
+  assert.equal(cards[2].children.length - 1, 8);
+  assert.equal(cards[3].children.length - 1, 1, 'Navigation to another group truncates');
+  assert.equal(cards[4].children.length - 1, 8, 'Preset 0 does not truncate');
+  assert.equal(cards[5].children.length - 1, 4, 'Navigation to another slot truncates');
+  assert.equal(cards[12].children.length - 1, 4);
+  assert.equal(app.run('groups.every(actions => actions.length === 8)'), true);
+});
+
+test('destination edits keep later slots hidden and type edits reveal through the next Navigate', () => {
+  const app = workspace();
+  app.run('groups = Array.from({length:16}, () => Array.from({length:8}, () => ({action:1,arg:99}))); groups[0][1] = {action:0,arg:0}; render()');
+  let card = app.elements.get('groups').children[0];
+  card.open = true;
+  let targets = card.children[2].children[2].children[0].children;
+  targets[0].value = '1'; targets[0].onchange();
+  card = app.elements.get('groups').children[0];
+  assert.equal(card.children.length - 1, 2);
+  assert.equal(card.open, true);
+  targets = card.children[2].children[2].children[0].children;
+  targets[0].value = '0'; targets[0].onchange();
+  card = app.elements.get('groups').children[0];
+  assert.equal(card.children.length - 1, 2);
+  targets = card.children[2].children[2].children[0].children;
+  targets[1].value = '1'; targets[1].onchange();
+  assert.equal(app.elements.get('groups').children[0].children.length - 1, 2);
+  app.run('groups[0][1].arg = 0; render()');
+  card = app.elements.get('groups').children[0];
+  const type = card.children[2].children[1].children[0];
+  type.value = '1'; type.onchange();
+  card = app.elements.get('groups').children[0];
+  assert.equal(card.children.length - 1, 8);
+  assert.equal(card.open, true);
+  assert.equal(app.run('dirty'), true);
+  assert.equal(app.run('groups[0][7].arg'), 99);
+  app.run('groups[0][1] = {action:0,arg:127}; groups[0][5] = {action:0,arg:16}; render()');
+  const firstNavigate = app.elements.get('groups').children[0].children[2].children[1].children[0];
+  firstNavigate.value = '1'; firstNavigate.onchange();
+  card = app.elements.get('groups').children[0];
+  assert.equal(card.children.length - 1, 6);
+  assert.equal(card.open, true);
+  assert.equal(card.children[0].children[1].textContent, '6 slots');
+});
+
+test('saving retains all hidden actions in the fixed device map', async () => {
+  const app = workspace();
+  await app.run('connect()');
+  app.run('groups[0][1] = {action:0,arg:0}; groups[0][7] = {action:1,arg:99}; markDirty(); render()');
+  assert.equal(app.elements.get('groups').children[0].children.length - 1, 2);
+  await app.elements.get('save').onclick();
+  assert.equal(app.saved().length, 128);
+  assert.equal(app.saved()[1], 0);
+  assert.equal(app.saved()[7], 227);
+  assert.equal(app.run('dirty'), false);
+});
+
 test('connection controls show only the current action and notifications remain visible', async () => {
   const app = workspace();
   assert.equal(app.elements.get('connect').hidden, false);

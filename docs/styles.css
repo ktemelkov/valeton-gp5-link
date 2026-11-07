@@ -1,16 +1,16 @@
-:root { color-scheme: light; --paper: #f3f6f3; --ink: #202e27; --muted: #617268; --line: #dce5de; --green: #17694f; }
+:root { color-scheme: dark; --paper: #101813; --surface: #18231e; --control: #223129; --ink: #e7f0ea; --muted: #a6b9ad; --line: #3b5144; --green: #75d6a7; }
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.55 "Segoe UI", sans-serif; }
 button, select { font: inherit; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; }
-button { cursor: pointer; background: white; color: var(--ink); padding: 9px 16px; font-weight: 600; white-space: nowrap; }
-button:hover:not(:disabled) { background: #eaf2ec; border-color: #9bbbaa; }
-button.primary { background: var(--green); color: white; border-color: var(--green); }
-button.primary:hover:not(:disabled) { background: #11543f; }
+button { cursor: pointer; background: var(--control); color: var(--ink); padding: 9px 16px; font-weight: 600; white-space: nowrap; }
+button:hover:not(:disabled) { background: #304539; border-color: #75a68a; }
+button.primary { background: var(--green); color: var(--paper); border-color: var(--green); }
+button.primary:hover:not(:disabled) { background: #95e4bd; }
 button:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
 button.quiet { background: transparent; color: var(--muted); font-size: 13px; padding: 8px 10px; }
-:focus-visible { outline: 3px solid #c28a25; outline-offset: 3px; }
+:focus-visible { outline: 3px solid #f2bd62; outline-offset: 3px; }
 [hidden] { display: none !important; }
-header { border-bottom: 1px solid var(--line); background: #fff; }
+header { border-bottom: 1px solid var(--line); background: var(--surface); }
 .header-inner, main, footer { max-width: 960px; margin: auto; padding: 16px 24px; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -21,23 +21,23 @@ h1 { font-size: 22px; }
 h2 { font-size: 24px; }
 h3 { font-size: 20px; }
 p { margin: 10px 0; }
-.connection { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--line); background: #fff; padding: 12px 16px; border-radius: 12px; }
+.connection { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--line); background: var(--surface); padding: 12px 16px; border-radius: 12px; }
 .connection > div:first-child { min-width: 0; }
 .connection p { overflow-wrap: anywhere; }
 .connection p { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
 .status { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.status::before { content: ""; width: 9px; height: 9px; background: #97a59c; border-radius: 50%; }
-.status.connected::before { background: #17845e; box-shadow: 0 0 0 4px #e6f3eb; }
-.notice { padding: 10px 12px; border-radius: 9px; color: var(--green); background: #e7f0e9; font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
-.warning { color: #805313; background: #fff1d9; }
+.status::before { content: ""; width: 9px; height: 9px; background: var(--muted); border-radius: 50%; }
+.status.connected::before { background: var(--green); box-shadow: 0 0 0 4px #264635; }
+.notice { padding: 10px 12px; border-radius: 9px; color: var(--green); background: #203a2c; font-size: 13px; margin: 12px 0; overflow-wrap: anywhere; }
+.warning { color: #f2cd8a; background: #3d301b; }
 .button-row { display: flex; gap: 8px; flex-shrink: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 12px; }
 .workspace-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .toolbar .button-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.badge { display: inline-block; font: 600 11px/1.5 "Segoe UI", sans-serif; color: var(--muted); border: 1px solid var(--line); background: #f5f8f5; border-radius: 20px; padding: 5px 10px; vertical-align: middle; white-space: nowrap; }
+.badge { display: inline-block; font: 600 11px/1.5 "Segoe UI", sans-serif; color: var(--muted); border: 1px solid var(--line); background: var(--control); border-radius: 20px; padding: 5px 10px; vertical-align: middle; white-space: nowrap; }
 .small { font-size: 12px; color: var(--muted); margin: 0 0 12px; overflow-wrap: anywhere; }
 .groups { display: grid; gap: 8px; min-width: 0; }
-.group-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 3px 12px #20392806; overflow: hidden; }
+.group-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 3px 12px #00000020; overflow: hidden; }
 .group-heading { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; cursor: pointer; list-style: none; }
 .group-heading::-webkit-details-marker { display: none; }
 .group-heading::before { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); flex-shrink: 0; }
@@ -46,14 +46,14 @@ p { margin: 10px 0; }
 .group-heading:focus-visible { outline: 2px solid var(--green); outline-offset: -4px; }
 .group-heading > div { flex: 1; min-width: 0; }
 .group-heading h3 { font-size: 17px; }
-.action-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #edf1ed; }
+.action-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .action-row:last-child { border-bottom: 0; }
 .action-number { font: 13px Consolas, monospace; color: var(--muted); }
 .action-type, .action-target { display: grid; min-width: 0; }
-select { width: 100%; min-width: 0; background: #f9fbf9; color: var(--ink); padding: 8px; font-size: 16px; }
+select { width: 100%; min-width: 0; background: var(--control); color: var(--ink); padding: 8px; font-size: 16px; }
 .target-controls { display: grid; min-width: 0; }
 .target-controls.navigation { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 8px; }
-.empty { text-align: center; padding: 32px 16px; border: 1px dashed #b7cbbd; border-radius: 14px; }
+.empty { text-align: center; padding: 32px 16px; border: 1px dashed var(--line); border-radius: 14px; }
 .empty p { color: var(--muted); }
 footer { font-size: 11px; color: var(--muted); padding-top: 16px; padding-bottom: 16px; }
 @media (max-width: 620px) {

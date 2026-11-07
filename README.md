@@ -79,10 +79,14 @@ Flash the updated ESP32-C3 firmware before using load/save. The page connects to
 the controller's action list and requests GP-5 preset names. Bluetooth permission
 requires a click on **Connect**; requests cannot run before that.
 
-The mobile workspace keeps **Reload** and **Save** on one row.
-Tap a group heading to expand its eight slots; navigation destinations show group
+The dark-themed mobile workspace keeps **Reload** and **Save** on one row.
+Tap a group heading to expand its actions; navigation destinations show group
 and slot side by side. **Reload** loads the controller's groups and refreshes
 the GP-5 preset names.
+The action list stops after the first **Navigate**, regardless of destination,
+including that navigation action. Later slots remain stored and are revealed
+if you change that action to **Preset change** (up to the next **Navigate**).
+The group badge counts visible slots.
 
 The map has 12 normal groups and four extended groups, each with eight fixed slots.
 Supported entries:
