@@ -135,9 +135,15 @@ public:
     NimBLERemoteService* getService(const char*) { return &service; }
     void setSelfDelete(bool, bool) {}
     void setClientCallbacks(NimBLEClientCallbacks* handler, bool) { callbacks = handler; }
-    void setConnectionParams(int, int, int, int) {}
+    void setConnectionParams(int min, int max, int latency, int timeout)
+    {
+        assert(min == 12 && max == 12 && latency == 0 && timeout == 200);
+    }
     void setConnectTimeout(int) {}
-    void updateConnParams(int, int, int, int) {}
+    void updateConnParams(int min, int max, int latency, int timeout)
+    {
+        assert(min == 12 && max == 12 && latency == 0 && timeout == 200);
+    }
     NimBLEAddress getPeerAddress() const { return {}; }
     int getRssi() const { return -40; }
     uint16_t getMTU() const { return mtu; }
@@ -212,6 +218,7 @@ public:
         assert(!owned);
         callbacks = handler;
     }
+    void registerAppServicesFirst(bool enabled) { assert(!enabled); }
     NimBLEService* createService(const char *uuid)
     {
         if (std::string(uuid) == "9c7b1000-6e4d-4f42-9a31-2d5e8b0c7f60")

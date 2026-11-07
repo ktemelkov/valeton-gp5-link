@@ -45,7 +45,12 @@ h2 .badge { margin-left: 8px; }
 .small { font-size: 12px !important; }
 .groups { display: grid; gap: 20px; min-width: 0; }
 .group-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 3px 12px #20392806; overflow: hidden; }
-.group-heading { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.group-heading { display: flex; align-items: center; gap: 12px; padding: 20px 24px; cursor: pointer; list-style: none; }
+.group-heading::-webkit-details-marker { display: none; }
+.group-heading::before { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); flex-shrink: 0; }
+.group-card[open] > .group-heading { border-bottom: 1px solid var(--line); }
+.group-card[open] > .group-heading::before { transform: rotate(45deg); }
+.group-heading:focus-visible { outline: 2px solid var(--green); outline-offset: -4px; }
 .group-heading > div { flex: 1; }
 .group-heading .eyebrow { font-size: 9px; margin-bottom: 5px; }
 .action-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1.1fr) auto; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid #edf1ed; }

@@ -30,7 +30,12 @@ Run the packet regression check with
 
 ### BLE MIDI proxy
 
-The firmware also advertises a BLE MIDI service as `GP5 Proxy`. Connect a
+NimBLE registers the standard Generic Access (`1800`) and Generic Attribute
+(`1801`) services before the application services. Generic Access exposes the
+Device Name characteristic (`2A00`) with read and write access, matching the
+GP-5's discovered GAP service; its value is `GP5 Proxy`, consistent with the
+proxy's advertised name. The firmware also advertises a BLE MIDI service.
+Connect a
 BLE MIDI controller to it and enable notifications on the MIDI characteristic.
 Writes (with or without response) are forwarded unchanged to the connected GP-5;
 GP-5 notifications are forwarded unchanged as notifications to the controller.
@@ -41,7 +46,7 @@ plus three bytes). Packets are not split or truncated. Writes while the GP-5 is
 disconnected, notifications without a connected/subscribed controller, oversized
 packets, and transmission failures are logged. Controller writes are not buffered
 or retried. GP-5 notifications and controller API replies enter a bounded FIFO
-of 32 complete packets (up to 512 bytes each), drained one packet per main-loop
+of 32 complete packets (up to 512 bytes each), drained up to five packets per main-loop
 iteration, outside the BLE host callbacks. `Send` success means queued, not
 delivered. Temporary host errors (`ENOMEM`, `EAGAIN`, `EBUSY`) retain the head packet
 for retry; GP-5 packets expire ten seconds after enqueueing, within the browser's
@@ -49,6 +54,9 @@ for retry; GP-5 packets expire ten seconds after enqueueing, within the browser'
 within their four-second request deadline. Queue overflow, expiry
 and permanent errors are explicitly logged. Disconnecting or unsubscribing
 invalidates queued packets so they cannot be sent to a later connection.
+The batch stops immediately on a temporary host error, retaining FIFO order.
+Discarded packets also count toward the five-packet limit. The main loop retains
+its 20 ms delay between iterations.
 
 Run the bidirectional proxy regression tests in a Visual Studio Developer
 PowerShell with C++ tools installed:
@@ -91,11 +99,25 @@ the GP-5's sound presets. Failed saves retain the page's unsaved edits.
 The name fetch sends the GP-5 sync packet
 `80 80 F0 00 0E 00 01 00 00 00 02 01 02 04 00 F7`, then the name-list request
 `80 80 F0 03 05 00 01 00 00 00 02 01 02 02 04 F7`.
+Every name fetch, including refresh, waits 100 ms between these commands to
+let the GP-5 enter sync mode. Sending only the name-list request is insufficient.
 The response contains five nibble-encoded names per 212-byte notification;
 all 100 entries must arrive within 12 seconds. Malformed, incomplete or failed
 fetches display **only preset indexes**, with an explicit warning, not invented
-names. Both BLE links need an ATT MTU of at least **215** for these notifications;
+names. The 16-byte end-of-list marker is informational, not an error or proof
+that all names reached the browser; loading waits for all 100 names or the
+deadline. Timeout errors include the received count and missing indexes.
+Both BLE links need an ATT MTU of at least **215** for these notifications;
 the configured preferred MTU is 256. The GP-5 must be connected to the proxy.
+The GP-5 client keeps a **15 ms connection interval** (12 BLE interval units)
+both during connection setup and in its post-connect update. Changing that
+update to 120 units (150 ms) caused missing patch-name batches before they
+reached the ESP32 in hardware testing. The 15 ms setting recovered all 20
+batches on connect and repeated refreshes; it favors reliable bursts over
+the lower activity of a 150 ms interval.
+Serial logs identify each patch-name batch at reception, queueing and forwarding,
+without a full 212-byte hex dump inside the receive callback. Compare these
+batch indexes with browser notifications to locate losses on either link.
 The protocol reference is the community
 [GP-5 Web Controller](https://github.com/helvecioneto/gp5-wc).
 

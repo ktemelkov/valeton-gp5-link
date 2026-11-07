@@ -228,8 +228,19 @@ bool BleClient::Send(const uint8_t *data, size_t length)
  */
 void BleClient::deviceNotifyCB(NimBLERemoteCharacteristic* pChr, uint8_t* data, size_t length, bool isNotify)
 {
-    ESP_LOGI(TAG, "Notification received from characteristic: %s", pChr->getUUID().toString().c_str());
-    ESP_LOG_BUFFER_HEX(TAG, data, length);
+    if (length == 212 && data[5] == 1 && data[6] == 5)
+    {
+        ESP_LOGI(TAG, "GP-5 patch-name batch received: %u", data[7] * 16u + data[8]);
+    }
+    else if (length == 212)
+    {
+        ESP_LOGI(TAG, "GP-5 list notification: type=%u/%u, batch=%u", data[5], data[6], data[7] * 16u + data[8]);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Notification received from characteristic: %s", pChr->getUUID().toString().c_str());
+        ESP_LOG_BUFFER_HEX(TAG, data, length);
+    }
 
     if (endpoint == nullptr)
     {
@@ -249,7 +260,7 @@ void BleClient::onConnect(NimBLEClient *pClient)
     ESP_LOGI(TAG, "Connected to: %s", pClient->getPeerAddress().toString().c_str());
     ESP_LOGI(TAG, "RSSI: %d\n", pClient->getRssi());
 
-    pClient->updateConnParams(120, 120, 0, 60);
+    pClient->updateConnParams(12, 12, 0, 200);
 }
 
 /**

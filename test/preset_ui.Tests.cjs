@@ -4,6 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+test('refresh names precedes reload in the toolbar and help panels are removed', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'docs', 'index.html'), 'utf8');
+  const toolbar = html.match(/<div class="toolbar">([\s\S]*?)<\/div>\s*<p id="names-status"/)[1];
+  assert.ok(toolbar.indexOf('id="refresh-names"') < toolbar.indexOf('id="reload"'));
+  assert.equal((html.match(/id="refresh-names"/g) || []).length, 1);
+  assert.doesNotMatch(html, /Make it yours|One press, one action|Names from your GP-5|class="sidebar"|class="workspace"/);
+});
+
 class Element extends EventTarget {
   constructor(tag = 'div') {
     super(); this.tag = tag; this.children = []; this.dataset = {};
@@ -39,7 +47,7 @@ function namePacket(batch, invalid = false) {
   return packet;
 }
 
-function workspace({ failNames = false, rejectSave = false } = {}) {
+function workspace({ failNames = false, rejectSave = false, earlyNameEnd = false, nameBatches = 20, nameTimeoutMs = 12000 } = {}) {
   const elements = new Map();
   const document = {
     getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); },
@@ -50,11 +58,18 @@ function workspace({ failNames = false, rejectSave = false } = {}) {
   const remote = Array(128).fill(0);
   remote[0] = 128; remote[8] = 227; remote[127] = 127;
   let saved;
+  let syncStartedAt = null;
   function receive(packet, channel = characteristic) {
     const padded = new Uint8Array(packet.length + 6);
     padded.set(packet, 3);
     channel.value = new DataView(padded.buffer, 3, packet.length);
     channel.dispatchEvent(new Event('characteristicvaluechanged'));
+  }
+  function receiveNameEnd() {
+    const end = new Uint8Array(16);
+    end.set([0x80, 0x80, 0xf0]);
+    end[5] = 1; end[6] = 5; end[7] = 1; end[8] = 4; end[15] = 0xf7;
+    receive(end);
   }
   characteristic.properties = { write: true };
   characteristic.startNotifications = async () => characteristic;
@@ -63,9 +78,19 @@ function workspace({ failNames = false, rejectSave = false } = {}) {
   characteristic.writeValueWithResponse = async (packet) => {
     const bytes = Array.from(packet); writes.push(bytes);
     assert.equal(bytes[0], 128, 'Only MIDI traffic belongs on the MIDI characteristic');
+    if (bytes[3] === 0) {
+      assert.deepEqual(bytes, [128, 128, 240, 0, 14, 0, 1, 0, 0, 0, 2, 1, 2, 4, 0, 247]);
+      syncStartedAt = Date.now();
+      if (earlyNameEnd) queueMicrotask(receiveNameEnd);
+    }
     if (bytes[3] === 3) {
+      assert.notEqual(syncStartedAt, null, 'Patch-list request requires start sync first');
+      assert.ok(Date.now() - syncStartedAt >= 90, 'Allow the GP-5 to enter sync mode before requesting names');
+      syncStartedAt = null;
       if (failNames) throw new Error('GP-5 is unavailable');
-      for (let batch = 0; batch < 20; batch++) queueMicrotask(() => receive(namePacket(batch)));
+      if (earlyNameEnd) queueMicrotask(receiveNameEnd);
+      for (let batch = 0; batch < nameBatches; batch++) queueMicrotask(() => receive(namePacket(batch)));
+      queueMicrotask(receiveNameEnd);
     }
   };
   configuration.writeValueWithResponse = async packet => {
@@ -104,7 +129,8 @@ function workspace({ failNames = false, rejectSave = false } = {}) {
       assert.equal(options.filters[0].name, 'GP5 Proxy');
       assert.ok(options.optionalServices.includes('9c7b1000-6e4d-4f42-9a31-2d5e8b0c7f60'));
       return device;
-    } } }, Uint8Array, DataView, console, setTimeout, clearTimeout,
+    } } }, Uint8Array, DataView, console,
+    setTimeout: (callback, delay) => setTimeout(callback, delay === 12000 ? nameTimeoutMs : delay), clearTimeout,
     Option: class extends Element {
       constructor(text, value) { super('option'); this.textContent = text; this.value = value; }
     }
@@ -115,6 +141,25 @@ function workspace({ failNames = false, rejectSave = false } = {}) {
     receiveConfiguration: packet => receive(packet, configuration), device, saved: () => saved };
 }
 
+test('groups start collapsed and preserve expanded state across editor refreshes', () => {
+  const app = workspace();
+  app.run('groups = Array.from({length:16}, () => Array.from({length:8}, () => ({action:0,arg:0}))); render()');
+  let cards = app.elements.get('groups').children;
+  assert.equal(cards.length, 16);
+  assert.ok(cards.every(card => card.tag === 'details' && card.open === false));
+  assert.ok(cards.every(card => card.children[0].tag === 'summary'));
+  cards[0].open = true;
+  cards[12].open = true;
+  app.run('render()');
+  cards = app.elements.get('groups').children;
+  assert.equal(cards[0].open, true);
+  assert.equal(cards[12].open, true);
+  assert.equal(cards[1].open, false);
+  cards[0].open = false;
+  app.run('render()');
+  assert.equal(app.elements.get('groups').children[0].open, false);
+});
+
 test('connect loads actions and all 100 GP-5 names, honoring DataView offsets', async () => {
   const app = workspace();
   await app.run('connect()');
@@ -122,9 +167,39 @@ test('connect loads actions and all 100 GP-5 names, honoring DataView offsets', 
   assert.equal(app.run('groups[1][0].arg'), 99);
   assert.equal(app.run('presetLabel(0)'), '0 - Tone 0');
   assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
+  assert.deepEqual(app.writes.filter(bytes => bytes[0] === 128).map(bytes => bytes[3]), [0, 3]);
   assert.deepEqual(app.writes.find(bytes => bytes[3] === 3),
     [128, 128, 240, 3, 5, 0, 1, 0, 0, 0, 2, 1, 2, 2, 4, 247]);
   assert.equal(app.elements.get('groups').children.length, 16);
+});
+
+test('refresh names repeats the sync handshake without collapsing an expanded group', async () => {
+  const app = workspace();
+  await app.run('connect()');
+  app.elements.get('groups').children[0].open = true;
+  await app.elements.get('refresh-names').onclick();
+  assert.deepEqual(app.writes.filter(bytes => bytes[0] === 128).map(bytes => bytes[3]), [0, 3, 0, 3]);
+  assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
+  assert.equal(app.elements.get('groups').children[0].open, true);
+});
+
+test('normal end markers during sync and before name data do not abort loading', async () => {
+  const app = workspace({ earlyNameEnd: true });
+  await app.run('connect()');
+  assert.deepEqual(app.writes.filter(bytes => bytes[0] === 128).map(bytes => bytes[3]), [0, 3]);
+  assert.equal(app.run('presetLabel(0)'), '0 - Tone 0');
+  assert.equal(app.run('presetLabel(99)'), '99 - Tone 99');
+  assert.equal(app.run('namePending'), null);
+});
+
+test('incomplete names remain an error with received count and missing indexes', async () => {
+  const app = workspace({ nameBatches: 19, nameTimeoutMs: 500 });
+  await app.run('connect()');
+  assert.equal(app.run('presetLabel(0)'), '0');
+  assert.equal(app.run('namePending'), null);
+  assert.match(app.elements.get('message').textContent, /received 95 \/ 100 names/);
+  assert.match(app.elements.get('message').textContent, /Missing indexes: 95, 96, 97, 98, 99/);
+  assert.match(app.elements.get('message').textContent, /Using indexes only/);
 });
 
 test('failed name fetch uses indexes only without losing loaded groups', async () => {

@@ -26,16 +26,10 @@
     <p id="message" class="notice" role="status" aria-live="polite">Your saved actions will load automatically after connecting.</p>
     <div class="toolbar">
       <div><p class="eyebrow">Preset workspace</p><h2>Groups &amp; actions <span id="group-count" class="badge">0 groups</span></h2></div>
-      <div class="button-row"><button id="reload" disabled>Reload from device</button><button id="save" class="primary" disabled>Save to device</button></div>
+      <div class="button-row"><button id="refresh-names" disabled>Refresh preset names</button><button id="reload" disabled>Reload from device</button><button id="save" class="primary" disabled>Save to device</button></div>
     </div>
-    <div class="workspace">
-      <aside class="sidebar">
-        <section class="help-card"><span class="step">01 / BUILD</span><h3>Make it yours</h3><p>The group button cycles 12 normal groups. Four extended groups follow; the two hold buttons select extended groups 1 and 2.</p><p id="group-limit" class="small">12 normal groups + 4 extended groups.</p></section>
-        <section class="help-card"><span class="step">02 / SEQUENCE</span><h3>One press, one action</h3><p>Each group has <strong>8 fixed slots</strong>. Choose a preset change or a destination group and slot.</p><p class="small">Navigation follows one hop. If its destination is another navigation entry, no MIDI message is sent. Advancing wraps after slot 8.</p></section>
-        <section class="help-card"><span class="step">03 / SYNC</span><h3>Names from your GP-5</h3><p id="names-status" role="status">Preset indexes 0-99. Names are requested when connected.</p><button id="refresh-names" disabled>Refresh preset names</button><p class="small">Saving changes the controller's action list, not the GP-5's sounds.</p></section>
-      </aside>
-      <section id="groups" class="groups" aria-label="Preset groups"><div class="empty"><h3>Your next set starts here.</h3><p>Connect your GP5 Link to load its preset groups.</p></div></section>
-    </div>
+    <p id="names-status" class="small" role="status">Preset indexes 0-99. Names are requested when connected.</p>
+    <section id="groups" class="groups" aria-label="Preset groups"><div class="empty"><h3>Your next set starts here.</h3><p>Connect your GP5 Link to load its preset groups.</p></div></section>
   </main>
   <footer><span>GP5 Link / BLE preset manager</span><span id="offline-status" role="status">Offline cache pending</span></footer>
   <script>
@@ -74,13 +68,16 @@
     function presetLabel(index) { return names[index] ? `${index} - ${names[index]}` : String(index); }
     function render() {
       const root = element('groups');
+      const expanded = new Set(Array.from(root.children).filter(card => card.open).map(card => Number(card.dataset.group)));
       root.replaceChildren();
       groups.forEach((actions, groupIndex) => {
-        const card = document.createElement('article');
+        const card = document.createElement('details');
         card.className = 'group-card';
+        card.dataset.group = groupIndex;
+        card.open = expanded.has(groupIndex);
         const hold = groupIndex >= normalCount;
         const title = hold ? `Extended group ${groupIndex - normalCount + 1}` : `Group ${groupIndex + 1}`;
-        const heading = document.createElement('div');
+        const heading = document.createElement('summary');
         heading.className = 'group-heading';
         const headingText = document.createElement('div');
         const label = document.createElement('p');
@@ -226,7 +223,7 @@
           element('names-status').textContent = `Fetching names: ${namePending.received.size} / 100`;
           if (namePending.received.size === 100) namePending.finish();
         } else if (bytes.length === 16 && bytes[5] === 1 && bytes[6] === 5 && bytes[7] === 1 && bytes[8] === 4 && bytes.at(-1) === 0xf7) {
-          namePending.fail(new Error('GP-5 returned an incomplete name list.'));
+          console.info(`GP-5 name-list end marker received: ${namePending.received.size} / 100 names collected.`);
         }
       } catch (error) { namePending?.fail(error); }
     }
@@ -237,7 +234,10 @@
       render();
       try {
         await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => namePending?.fail(new Error('GP-5 name request timed out.')), 12000);
+          const timer = setTimeout(() => {
+            const missing = Array.from({ length: 100 }, (_, index) => index).filter(index => !current.received.has(index));
+            current.fail(new Error(`GP-5 name request timed out: received ${current.received.size} / 100 names. Missing indexes: ${missing.join(', ')}. Check MIDI notifications and both BLE links' MTU (at least 215).`));
+          }, 12000);
           const current = {
             names: Array(100).fill(''), received: new Set(),
             finish() { clearTimeout(timer); names = current.names; namePending = null; resolve(); },
@@ -246,7 +246,7 @@
           namePending = current;
           (async () => {
             await write(START_SYNC);
-            await new Promise((done) => setTimeout(done, 250));
+            await new Promise((done) => setTimeout(done, 100));
             if (namePending !== current) return;
             await write(REQUEST_NAMES);
           })().catch((error) => { if (namePending === current) current.fail(error); });

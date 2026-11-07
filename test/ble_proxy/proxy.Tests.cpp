@@ -164,14 +164,40 @@ static void notificationTests()
     assert(mockSentPackets.empty());
     mockTicks += 2500;
     mockNotifyCode = 0;
-    for (int batch = 0; batch < 20; ++batch)
+    for (int batch = 0; batch < 4; ++batch)
     {
         mockTicks += 20;
         api.processNotifications();
-        assert(mockSentPackets.back().size() == 212);
-        assert(mockSentPackets.back()[7] == batch);
+        assert(mockSentPackets.size() == static_cast<size_t>((batch + 1) * 5));
+        for (int slot = 0; slot < 5; ++slot)
+        {
+            const auto &sent = mockSentPackets[batch * 5 + slot];
+            assert(sent.size() == 212);
+            assert(sent[7] == batch * 5 + slot);
+        }
     }
     assert(mockSentPackets.size() == 20);
+
+    for (int code : {BLE_HS_ENOMEM, BLE_HS_EAGAIN, BLE_HS_EBUSY})
+    {
+        const size_t before = mockSentPackets.size();
+        for (uint8_t slot = 0; slot < 7; ++slot)
+        {
+            packet[7] = slot;
+            assert(api.Send(packet.data(), packet.size()));
+        }
+        mockNotifySequence = {0, 0, code};
+        api.processNotifications();
+        assert(mockNotifySequence.empty());
+        assert(mockSentPackets.size() == before + 2);
+        api.processNotifications();
+        assert(mockSentPackets.size() == before + 7);
+        for (uint8_t slot = 0; slot < 7; ++slot)
+            assert(mockSentPackets[before + slot][7] == slot);
+        api.processNotifications();
+        assert(mockSentPackets.size() == before + 7);
+    }
+    mockSentPackets.resize(20);
 
     assert(api.Send(packet.data(), packet.size()));
     mockNotifyCode = BLE_HS_EBUSY;
@@ -201,7 +227,10 @@ static void notificationTests()
     api.onDisconnect(&server, controller, 0);
     api.onConnect(&server, controller);
     api.onSubscribe(&local, controller, 1);
-    for (int i = 0; i < 32; ++i) api.processNotifications();
+    const int staleErrors = mockErrors;
+    api.processNotifications();
+    assert(mockErrors == staleErrors + 5);
+    for (int i = 0; i < 6; ++i) api.processNotifications();
     assert(mockSentPackets.size() == 21);
 
     assert(api.Send(packet.data(), packet.size()));

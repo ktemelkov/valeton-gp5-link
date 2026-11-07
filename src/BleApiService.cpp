@@ -51,21 +51,21 @@ void BleApiService::setup(BleEndpoint* endpoint, PresetManager *presets)
 
     NimBLEServer *pServer = NimBLEDevice::createServer();
     pServer->setCallbacks(this, false);
-
-    NimBLEService *pService = pServer->createService(MIDI_Service_UUID_Str);
-    NimBLECharacteristic *pCharacteristic = pService->createCharacteristic(MIDI_Char_UUID_Str, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY);
-    pCharacteristic->setCallbacks(this);
+    pServer->registerAppServicesFirst(false);
+    
     NimBLEService *configurationService = pServer->createService(Configuration_Service_UUID);
-    configurationChannel = configurationService->createCharacteristic(
-        Configuration_Char_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
+    configurationChannel = configurationService->createCharacteristic(Configuration_Char_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
     configurationChannel->setCallbacks(this);
+
+    NimBLEService *pMidiService = pServer->createService(MIDI_Service_UUID_Str);
+    midiChannel = pMidiService->createCharacteristic(MIDI_Char_UUID_Str, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY);
+    midiChannel->setCallbacks(this);
+    
     if (!pServer->start())
     {
         ESP_LOGE(TAG, "Failed to start BLE API server.");
         return;
     }
-
-    midiChannel = pCharacteristic;
 
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     
@@ -162,7 +162,7 @@ void BleApiService::onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInf
     ESP_LOGI(TAG, "BleApiService: Received %u bytes\n", static_cast<unsigned>(val.size()));
     ESP_LOG_BUFFER_HEX(TAG, val.data(), val.size());
 
-    if (pCharacteristic == configurationChannel)
+    if (pCharacteristic->getHandle() == configurationChannel->getHandle())
     {
         if (lockChannel == nullptr || pdTRUE != xSemaphoreTake(lockChannel, portMAX_DELAY))
         {
@@ -186,7 +186,8 @@ void BleApiService::onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInf
         presets->handleApi(val.data(), val.size(), reply);
         return;
     }
-    if (pCharacteristic != midiChannel)
+
+    if (pCharacteristic->getHandle() != midiChannel->getHandle())
     {
         ESP_LOGE(TAG, "Write received on unknown characteristic.");
         return;
@@ -296,68 +297,77 @@ bool BleApiService::enqueue(const uint8_t *data, size_t length, bool api)
         ESP_LOGE(TAG, "BLE notification queue full: dropping %u bytes.", static_cast<unsigned>(length));
         return false;
     }
+    if (!api && length == 212 && data[5] == 1 && data[6] == 5)
+        ESP_LOGI(TAG, "Patch-name batch queued: %u", data[7] * 16u + data[8]);
     return true;
 }
 
 void BleApiService::processNotifications()
 {
-    Notification notification;
-    if (notifications == nullptr || midiChannel == nullptr ||
-        xQueuePeek(notifications, &notification, 0) != pdTRUE)
-        return;
+    for (uint8_t processed = 0; processed < 5; ++processed)
+    {
+        Notification notification;
+        if (notifications == nullptr || midiChannel == nullptr ||
+            xQueuePeek(notifications, &notification, 0) != pdTRUE)
+            return;
 
-    if (pdTRUE != xSemaphoreTake(lockChannel, portMAX_DELAY))
-    {
-        ESP_LOGE(TAG, "Cannot process BLE notification: channel lock unavailable.");
-        return;
-    }
-    const bool current = (notification.api ? configurationSubscribed : subscribed) &&
-                         notification.connectionHandle == midiConnectionHandle &&
-                         notification.generation == (notification.api ? configurationGeneration : connectionGeneration);
-    xSemaphoreGive(lockChannel);
-
-    int code = 0;
-    const uint32_t lifetimeMs = notification.api ? 2000 : 10000;
-    bool discard = !current;
-    if (!current)
-        ESP_LOGW(TAG, "Discarding queued BLE notification from an ended subscription.");
-    else if (static_cast<TickType_t>(xTaskGetTickCount() - notification.queuedAt) >= pdMS_TO_TICKS(lifetimeMs))
-    {
-        ESP_LOGE(TAG, "BLE notification expired after %u ms: handle=%u, bytes=%u.",
-                 static_cast<unsigned>(lifetimeMs), notification.connectionHandle, notification.length);
-        discard = true;
-    }
-    else
-    {
-        const uint16_t mtu = NimBLEDevice::getServer()->getPeerMTU(notification.connectionHandle);
-        if (mtu < 3 || notification.length > mtu - 3)
+        if (pdTRUE != xSemaphoreTake(lockChannel, portMAX_DELAY))
         {
-            ESP_LOGE(TAG, "Queued BLE notification exceeds current MTU: bytes=%u, MTU=%u.",
-                     notification.length, mtu);
+            ESP_LOGE(TAG, "Cannot process BLE notification: channel lock unavailable.");
+            return;
+        }
+        const bool current = (notification.api ? configurationSubscribed : subscribed) &&
+                             notification.connectionHandle == midiConnectionHandle &&
+                             notification.generation == (notification.api ? configurationGeneration : connectionGeneration);
+        xSemaphoreGive(lockChannel);
+
+        int code = 0;
+        const uint32_t lifetimeMs = notification.api ? 2000 : 10000;
+        bool discard = !current;
+        if (!current)
+            ESP_LOGW(TAG, "Discarding queued BLE notification from an ended subscription.");
+        else if (static_cast<TickType_t>(xTaskGetTickCount() - notification.queuedAt) >= pdMS_TO_TICKS(lifetimeMs))
+        {
+            ESP_LOGE(TAG, "BLE notification expired after %u ms: handle=%u, bytes=%u.",
+                     static_cast<unsigned>(lifetimeMs), notification.connectionHandle, notification.length);
             discard = true;
         }
         else
         {
-            // Use the host API to retain the error code without sleeping in a BLE callback.
-            os_mbuf *buffer = ble_hs_mbuf_from_flat(notification.data, notification.length);
-            code = buffer == nullptr ? BLE_HS_ENOMEM :
-                   ble_gatts_notify_custom(notification.connectionHandle,
-                       (notification.api ? configurationChannel : midiChannel)->getHandle(), buffer);
-            if (code == BLE_HS_ENOMEM || code == BLE_HS_EAGAIN || code == BLE_HS_EBUSY)
+            const uint16_t mtu = NimBLEDevice::getServer()->getPeerMTU(notification.connectionHandle);
+            if (mtu < 3 || notification.length > mtu - 3)
             {
-                if (!retrying)
-                    ESP_LOGW(TAG, "BLE notification deferred: rc=%d, bytes=%u. Retrying from main loop.",
-                             code, notification.length);
-                retrying = true;
-                return;
+                ESP_LOGE(TAG, "Queued BLE notification exceeds current MTU: bytes=%u, MTU=%u.",
+                         notification.length, mtu);
+                discard = true;
             }
-            if (code != 0)
-                ESP_LOGE(TAG, "Queued BLE notification failed: handle=%u, bytes=%u, rc=%d.",
-                         notification.connectionHandle, notification.length, code);
+            else
+            {
+                // Use the host API to retain the error code without sleeping in a BLE callback.
+                os_mbuf *buffer = ble_hs_mbuf_from_flat(notification.data, notification.length);
+                code = buffer == nullptr ? BLE_HS_ENOMEM :
+                       ble_gatts_notify_custom(notification.connectionHandle,
+                           (notification.api ? configurationChannel : midiChannel)->getHandle(), buffer);
+                if (code == BLE_HS_ENOMEM || code == BLE_HS_EAGAIN || code == BLE_HS_EBUSY)
+                {
+                    if (!retrying)
+                        ESP_LOGW(TAG, "BLE notification deferred: rc=%d, bytes=%u. Retrying from main loop.",
+                                 code, notification.length);
+                    retrying = true;
+                    return;
+                }
+                if (code != 0)
+                    ESP_LOGE(TAG, "Queued BLE notification failed: handle=%u, bytes=%u, rc=%d.",
+                             notification.connectionHandle, notification.length, code);
+            }
         }
+        if (!discard && code == 0 && retrying)
+            ESP_LOGI(TAG, "Deferred BLE notification sent.");
+        if (!notification.api && notification.length == 212 &&
+            notification.data[5] == 1 && notification.data[6] == 5)
+            ESP_LOGI(TAG, "Patch-name batch forwarding: batch=%u, discarded=%u, rc=%d",
+                     notification.data[7] * 16u + notification.data[8], static_cast<unsigned>(discard), code);
+        retrying = false;
+        xQueueReceive(notifications, &notification, 0);
     }
-    if (!discard && code == 0 && retrying)
-        ESP_LOGI(TAG, "Deferred BLE notification sent.");
-    retrying = false;
-    xQueueReceive(notifications, &notification, 0);
 }
