@@ -4,10 +4,11 @@
 #include <stdint.h>
 
 #include "esp_attr.h"
+#include "freertos/FreeRTOS.h"
 
 #define MAX_BUTTONS 10
-#define DEBOUNCE_MS 80
-#define HOLD_MS 1000
+#define DEBOUNCE_MS 35
+#define HOLD_MS 1300
 
 enum ButtonEvent
 {
@@ -54,9 +55,10 @@ private:
 
 private:
     uint8_t _buttonPin[MAX_BUTTONS];
-    volatile uint8_t _stableLevel[MAX_BUTTONS];
+    volatile uint8_t _lastLevel[MAX_BUTTONS];
     volatile uint32_t _lastIsr[MAX_BUTTONS];
     volatile ButtonState _btnState[MAX_BUTTONS];
+    portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
 
     uint16_t _buttonCount = 0;
 };

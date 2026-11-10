@@ -166,14 +166,22 @@ test('compact groups keep named controls and paired navigation targets editable'
   app.run('groups = Array.from({length:16}, () => Array.from({length:8}, () => ({action:0,arg:0}))); render()');
   const card = app.elements.get('groups').children[12];
   const row = card.children[1];
-  assert.equal(card.children[0].children[0].children.length, 1, 'No duplicate group heading');
-  assert.equal(card.children[0].children[0].children[0].textContent, 'Extended group 1');
+  const cards = app.elements.get('groups').children;
+  cards.slice(0, 12).forEach(group => assert.equal(group.children[0].children[0].children.length, 1));
+  ['hold tone', 'hold volume', 'tone + volume', 'volume + tone'].forEach((text, index) => {
+    const heading = cards[12 + index].children[0].children[0];
+    assert.equal(heading.children.length, 2);
+    assert.equal(heading.children[0].textContent, `Extended ${index + 1}`);
+    assert.equal(heading.children[1].tag, 'small');
+    assert.equal(heading.children[1].className, 'small');
+    assert.equal(heading.children[1].textContent, text);
+  });
   const type = row.children[1].children[0];
   const targets = row.children[2].children[0];
   assert.equal(targets.className, 'target-controls navigation');
   assert.equal(targets.children.length, 2);
   const [group, slot] = targets.children;
-  assert.match(type.attributes['aria-label'], /Extended group 1, action 1, type/);
+  assert.match(type.attributes['aria-label'], /Extended 1, action 1, type/);
   assert.match(group.attributes['aria-label'], /destination group/);
   assert.match(slot.attributes['aria-label'], /destination slot/);
   group.value = '15'; slot.value = '7'; slot.onchange();

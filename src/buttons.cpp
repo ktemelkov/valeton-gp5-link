@@ -19,7 +19,7 @@ Buttons &Buttons::instance()
 
 /**
  * @brief Initializes the button manager, setting all pins to default states.
- * This constructor sets all button pins to 0, stable levels to 1 (released),
+ * This constructor sets all button pins to 0, last levels to 1 (released),
  * last ISR timestamps to 0, and button states to UNDEFINED_STATE.
  */
 Buttons::Buttons()
@@ -27,7 +27,7 @@ Buttons::Buttons()
     for (uint16_t i = 0; i < MAX_BUTTONS; ++i)
     {
         _buttonPin[i] = 0;
-        _stableLevel[i] = 1;
+        _lastLevel[i] = 1;
         _lastIsr[i] = 0;
         _btnState[i] = UNDEFINED_STATE;
     }
@@ -77,7 +77,7 @@ void Buttons::begin(const uint8_t *buttonPins, uint16_t buttonCount)
 
         const uint8_t level = static_cast<uint8_t>(gpio_get_level(static_cast<gpio_num_t>(pin)));
         _buttonPin[index] = pin;
-        _stableLevel[index] = level;
+        _lastLevel[index] = level;
         _lastIsr[index] = level == 0
                               ? static_cast<uint32_t>(esp_timer_get_time() / 1000)
                               : 0;
@@ -120,16 +120,25 @@ ButtonEvent Buttons::getEvent(uint8_t buttonPin)
 
     if (index != 0xff)
     {
+        portENTER_CRITICAL(&_mux);
+        const uint32_t lastIsr = _lastIsr[index];
+        const uint8_t lastLevel = _lastLevel[index];
         const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        portEXIT_CRITICAL(&_mux);
+
+        if ((now - lastIsr) < DEBOUNCE_MS)
+        {
+            return NO_CHANGE;
+        }
 
         // Buttons are wired to ground, so a low level means pressed.
-        if (_stableLevel[index] == 0 && _btnState[index] == RELEASED_STATE)
+        if (lastLevel == 0 && _btnState[index] == RELEASED_STATE)
         {
             _btnState[index] = PRESSED_STATE;
             return PRESSED;
         }
 
-        if (_stableLevel[index] != 0 && _btnState[index] != RELEASED_STATE)
+        if (lastLevel != 0 && _btnState[index] != RELEASED_STATE)
         {
             ButtonEvent ret = (_btnState[index] != LONG_PRESSED_STATE) ? RELEASED : NO_CHANGE;
 
@@ -137,7 +146,7 @@ ButtonEvent Buttons::getEvent(uint8_t buttonPin)
             return ret;
         }
 
-        if (_stableLevel[index] == 0 && (now - _lastIsr[index]) > HOLD_MS && _btnState[index] != LONG_PRESSED_STATE)
+        if (lastLevel == 0 && (now - lastIsr) > HOLD_MS && _btnState[index] != LONG_PRESSED_STATE)
         {
             _btnState[index] = LONG_PRESSED_STATE;
             return HOLD;
@@ -206,8 +215,7 @@ void Buttons::isr(void *args)
 }
 
 /**
- * Debounced edge detection: a level is only accepted when it differs from the
- * stored one and the previously accepted edge is older than DEBOUNCE_MS.
+ * Records every edge; getEvent() waits for DEBOUNCE_MS without another edge.
  */
 void Buttons::handleInterrupt(uint8_t index)
 {
@@ -216,20 +224,10 @@ void Buttons::handleInterrupt(uint8_t index)
         return;
     }
 
+    portENTER_CRITICAL_ISR(&_mux);
     const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
-    if ((now - _lastIsr[index]) < DEBOUNCE_MS)
-    {
-        return;
-    }
-
-    const uint8_t level = static_cast<uint8_t>(gpio_get_level(static_cast<gpio_num_t>(_buttonPin[index])));
-
-    if (level == _stableLevel[index])
-    {
-        return;
-    }
-
+    _lastLevel[index] = static_cast<uint8_t>(gpio_get_level(static_cast<gpio_num_t>(_buttonPin[index])));
     _lastIsr[index] = now;
-    _stableLevel[index] = level;
+    portEXIT_CRITICAL_ISR(&_mux);
 }

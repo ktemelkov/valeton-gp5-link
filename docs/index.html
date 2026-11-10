@@ -72,6 +72,7 @@
       const root = element('groups');
       const expanded = new Set(Array.from(root.children).filter(card => card.open).map(card => Number(card.dataset.group)));
       root.replaceChildren();
+      const extGroupTexts = ['hold tone for 2 seconds', 'hold volume for 2 seconds', 'press tone, then volume', 'press volume, then tone'];
       groups.forEach((actions, groupIndex) => {
         const end = actions.findIndex(action => action.action === 0);
         const visibleActions = end < 0 ? actions : actions.slice(0, end + 1);
@@ -87,6 +88,12 @@
         const name = document.createElement('h3');
         name.textContent = title;
         headingText.append(name);
+        if (hold) {
+          const activation = document.createElement('small');
+          activation.className = 'small';
+          activation.textContent = extGroupTexts[groupIndex - normalCount];
+          headingText.append(activation);
+        }
         const count = document.createElement('span');
         count.className = 'badge';
         count.textContent = `${visibleActions.length} ${visibleActions.length === 1 ? 'slot' : 'slots'}`;

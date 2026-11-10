@@ -43,7 +43,7 @@ extern "C" void app_main()
 
   while (true)
   {
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(30));
     bleApiService.processNotifications();
 
     if (powerManager.shouldSleep())
@@ -74,9 +74,17 @@ extern "C" void app_main()
       continue;
     }
 
-    auto event1 = buttons.getEvent(BUTTON1_PIN);
+    /*
+     * Release volume button alone - next preset
+     * Release tone button alone - next group
+     * Hold tone button for 2 sec - ext group 1
+     * Hold volume button for 2 sec - ext group 2
+     * Press tone button and next press+release volume button - ext group 3
+     * Press volume button and next press tone button - ext group 4
+     */
+    auto event1 = buttons.getEvent(BUTTON1_PIN); // button 1 is the top button
     auto state1 = buttons.getState(BUTTON1_PIN);
-    auto event2 = buttons.getEvent(BUTTON2_PIN);
+    auto event2 = buttons.getEvent(BUTTON2_PIN); // button 2 is the bottom button
     auto state2 = buttons.getState(BUTTON2_PIN);
 
     if (event1 == RELEASED)
@@ -84,14 +92,14 @@ extern "C" void app_main()
       led.toggle();
       powerManager.triggerWatchdog();
 
-      if (state2 != RELEASED_STATE)
+      if (state2 != RELEASED_STATE) // hold bottom and press top button
       {
         buttons.setState(BUTTON2_PIN, LONG_PRESSED_STATE);
 
         BLEMessage msg = presetManager.extGroup3();
         bleClient.Send(msg.data, msg.length);
       }
-      else
+      else // press top button alone
       {
         BLEMessage msg = presetManager.nextPreset();
         bleClient.Send(msg.data, msg.length);
@@ -103,14 +111,14 @@ extern "C" void app_main()
       led.toggle();
       powerManager.triggerWatchdog();
 
-      if (state1 != RELEASED_STATE)
+      if (state1 != RELEASED_STATE) // hold top and press bottom button
       {
         buttons.setState(BUTTON1_PIN, LONG_PRESSED_STATE);
 
         BLEMessage msg = presetManager.extGroup4();
         bleClient.Send(msg.data, msg.length);
       }
-      else
+      else // press bottom button alone
       {
         BLEMessage msg = presetManager.nextGroup();
         bleClient.Send(msg.data, msg.length);
